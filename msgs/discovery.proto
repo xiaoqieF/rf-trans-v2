@@ -1,0 +1,77 @@
+syntax = "proto3";
+package rf.msgs;
+
+import "header.proto";
+
+message Discovery
+{
+enum Type
+{
+    UNINITIALIZED   = 0;
+    ADVERTISE       = 1;
+    SUBSCRIBE       = 2;
+    UNADVERTISE     = 3;
+    HEARTBEAT       = 4;
+    BYE             = 5;
+    NEW_CONNECTION  = 6;
+    END_CONNECTION  = 7;
+    SUBSCRIBERS_REQ = 8;
+    SUBSCRIBERS_REP = 9;
+}
+
+message Subscriber
+{
+    string topic = 1;
+}
+
+message Publisher
+{
+enum Scope
+{
+    /// Topic/service only available to subscribers in the same process
+    PROCESS = 0;
+    /// Topic/service only available to subscribers in the same machine
+    HOST = 1;
+    /// Topic/service available to any subscribers
+    ALL = 2;
+}
+
+message MessagePublisher
+{
+    string ctrl = 1;
+    string msg_type = 2;
+    bool throttled = 3;
+    uint64 msgs_per_sec = 4;
+}
+
+message ServicePublisher
+{
+    string socket_id = 1;
+    string request_type = 2;
+    string response_type = 3;
+}
+
+string topic = 1;
+string address = 2;
+string process_uuid = 3;
+string node_uuid = 4;
+Scope scope = 5;
+
+oneof pub_type
+{
+    MessagePublisher msg_pub = 6;
+    ServicePublisher srv_pub = 7;
+}
+}  /// message Publisher
+
+Header header = 1;
+uint32 version = 2;
+string process_uuid = 3;
+Type type = 4;
+oneof disc_contents
+{
+    Subscriber sub = 6;
+    Publisher pub = 7;
+}
+
+}

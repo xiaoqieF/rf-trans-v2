@@ -1,0 +1,8 @@
+syntax = "proto3";
+package rf.msgs;
+
+message Time
+{
+    int64 sec = 1;
+    int32 nsec = 2;
+}
