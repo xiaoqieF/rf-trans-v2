@@ -51,7 +51,7 @@ public:
         return !(*this == rhs);
     }
 
-    bool throttled() const { return msgs_per_sec_ == kUnthrottled; }
+    bool throttled() const { return msgs_per_sec_ != kUnthrottled; }
     uint64_t getMsgsPerSec() const { return msgs_per_sec_; }
     void setMsgsPerSec(uint64_t msg_per_sec) { msgs_per_sec_ = msg_per_sec; }
 

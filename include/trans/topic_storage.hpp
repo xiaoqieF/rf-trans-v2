@@ -48,7 +48,7 @@ private:
 template<typename Pub>
 bool TopicStorage<Pub>::addPublisher(const Pub& publisher)
 {
-    auto mp = data_[publisher.getTopic()];
+    auto& mp = data_[publisher.getTopic()];
     if (mp.find(publisher.getProcessUuid()) != mp.end()) {
         auto& pub_list = mp[publisher.getProcessUuid()];
         auto found = std::find_if(pub_list.begin(), pub_list.end(), [&publisher] (const Pub& pub) {

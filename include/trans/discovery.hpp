@@ -36,6 +36,8 @@ public:
 
     bool advertise(const Pub& publisher);
     bool unadvertise(const std::string& topic, const std::string& node_uuid);
+
+    // Try to discover [topic] immediately, whic send a SUBSCRIBE msg about topic
     bool discover(const std::string& topic) const;
     void sendSubscribersRep(const MessagePublisher& pub) const;
     void registerNode(const MessagePublisher& pub) const;

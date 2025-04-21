@@ -34,7 +34,7 @@ public:
     Logger *defaultLogger() { return default_logger_.get(); }
 
 private:
-    LoggerFactory() { default_logger_ = sync_factory::create<sinks::StdColorSinkNullMutex>(""); };
+    LoggerFactory() { default_logger_ = sync_factory::create<sinks::StdColorSinkMutex>(""); };
     std::unique_ptr<Logger> default_logger_;
 };
 
