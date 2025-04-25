@@ -47,6 +47,7 @@ public:
     bool getPublishers(const std::string& topic, AddressMap<Pub>& publishers) const;
     bool getRemoteSubscribers(const std::string& topic, AddressMap<Pub>& subscribers) const;
 
+    // How do this func work ?
     void getTopicList(std::vector<std::string>& topics);
     std::string getHostAddr() const;
     unsigned int getActivityInterval() const;
@@ -132,7 +133,7 @@ namespace details
 {
 inline bool pollSockets(const std::vector<int>& sockets, const int timeout)
 {
-    // We only listen to the first socket, cause we bind all interfaces in to it.
+    // We only listen to the first socket, cause we bind all interfaces on it.
     // all messages from different interfaces will come to the first socket.
     zmq::pollitem_t items[] = {
         {0, static_cast<zmq_fd_t>(sockets.at(0)), ZMQ_POLLIN, 0}
