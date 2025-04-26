@@ -23,6 +23,9 @@ class NodeShared
 {
 public:
     static NodeShared& getInstance();
+    NodeShared(const NodeShared&) = delete;
+    NodeShared& operator=(const NodeShared&) = delete;
+
     bool publish(const std::string& topic, char* data, const size_t data_size,
         DeallocFunc* ffn, const std::string& msg_type);
     void sendPendingRemoteReqs(const std::string& topic,
@@ -39,8 +42,8 @@ private:
     void remotePubLoop();
     void serviceHandleLoop();
 
-    void handleRequest(std::list<std::unique_ptr<RemoteRequest>>);
-    void handleResponse(std::list<std::unique_ptr<RemoteResponse>>);
+    void handleRequest(const std::list<std::unique_ptr<RemoteRequest>>&);
+    void handleResponse(const std::list<std::unique_ptr<RemoteResponse>>&);
 
     void recvMsgUpdate();
     void recvSrvRequest();
@@ -57,8 +60,8 @@ private:
     SubscriberInfo checkSubscriberInfo(const std::string& topic, const std::string& msg_type) const;
 
 private:
-    static constexpr int kDefaultMsgDiscoveryPort = 10317;
-    static constexpr int kDefaultSrvDiscoveryPort = 10318;
+    static constexpr int kDefaultMsgDiscoveryPort = 10319;
+    static constexpr int kDefaultSrvDiscoveryPort = 10320;
 
     std::string response_receiver_uuid_{generateUuidV4()};
     std::string replier_uuid_{generateUuidV4()};
@@ -77,9 +80,9 @@ private:
 
     mutable std::recursive_mutex service_mutex_;
     /// TODO: make this a multiset.
-    std::vector<std::string> service_connections_;      // keep remote service server addr
-    HandlerStorage<IRepHandler> repliers_;               // local repliers
-    HandlerStorage<IReqHandler> requests_;               // store pending requests
+    std::vector<std::string> service_connections_;                // keep remote service server addr
+    HandlerStorage<IRepHandler> response_handlers_;               // local repliers
+    HandlerStorage<IReqHandler> request_handlers_;                // store pending requests
 
     std::string host_address_;
 

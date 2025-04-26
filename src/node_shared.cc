@@ -1,5 +1,3 @@
-#pragma once
-
 #include "trans/node_shared.hpp"
 
 namespace rf
@@ -22,6 +20,14 @@ NodeShared::~NodeShared()
 
     if (receive_msg_thread_.joinable()) {
         receive_msg_thread_.join();
+    }
+
+    if (remote_msg_handle_thread_.joinable()) {
+        remote_msg_handle_thread_.join();
+    }
+
+    if (service_handle_thread_.joinable()) {
+        service_handle_thread_.join();
     }
 }
 
@@ -212,7 +218,7 @@ void NodeShared::onNewSrvConnection(const ServicePublisher& pub)
     }
 
     IReqHandlerPtr handler;
-    if (requests_.getFirstHandler(topic, req_type, rep_type, handler)) {
+    if (request_handlers_.getFirstHandler(topic, req_type, rep_type, handler)) {
         sendPendingRemoteReqs(topic, req_type, rep_type);
     }
 }
@@ -327,7 +333,7 @@ void NodeShared::sendPendingRemoteReqs(const std::string& topic,
     }
 
     std::map<std::string, std::map<std::string, IReqHandlerPtr>> req_handlers;
-    if (!requests_.getHandlers(topic, req_handlers)) {
+    if (!request_handlers_.getHandlers(topic, req_handlers)) {
         return;
     }
 
@@ -360,7 +366,6 @@ void NodeShared::sendPendingRemoteReqs(const std::string& topic,
                 msg.rebuild(topic.size());
                 memcpy(msg.data(), topic.data(), topic.size());
                 requester_->send(msg, zmq::send_flags::sndmore);
-
 
                 // Send requester_addr
                 msg.rebuild(my_requester_address_.size());
@@ -728,13 +733,13 @@ void NodeShared::serviceHandleLoop()
     }
 }
 
-void NodeShared::handleRequest(std::list<std::unique_ptr<RemoteRequest>> requests)
+void NodeShared::handleRequest(const std::list<std::unique_ptr<RemoteRequest>>& requests)
 {
     using namespace std::chrono_literals;
 
     IRepHandlerPtr rep_handler;
     for (auto& request : requests) {
-        bool has_handler = repliers_.getFirstHandler(request->topic, request->req_type,
+        bool has_handler = response_handlers_.getFirstHandler(request->topic, request->req_type,
             request->rep_type, rep_handler);
 
         if (!has_handler) {
@@ -795,11 +800,12 @@ void NodeShared::handleRequest(std::list<std::unique_ptr<RemoteRequest>> request
     }
 }
 
-void NodeShared::handleResponse(std::list<std::unique_ptr<RemoteResponse>> responses)
+void NodeShared::handleResponse(const std::list<std::unique_ptr<RemoteResponse>>& responses)
 {
     for (auto& response : responses) {
         IReqHandlerPtr req_handler;
-        bool has_handler = requests_.getHandler(response->topic, response->node_uuid, response->req_uuid, req_handler);
+        bool has_handler = request_handlers_.getHandler(response->topic, response->node_uuid,
+            response->req_uuid, req_handler);
 
         if (!has_handler) {
             elog::error("Receive a service call response, but I don't have a hander for it.");
@@ -809,7 +815,7 @@ void NodeShared::handleResponse(std::list<std::unique_ptr<RemoteResponse>> respo
         bool result = (response->result_str == "1");
         req_handler->notifyResult(response->rep_data, result);
 
-        if (!requests_.removeHandler(response->topic, response->node_uuid, response->req_uuid)) {
+        if (!request_handlers_.removeHandler(response->topic, response->node_uuid, response->req_uuid)) {
             elog::error("NodeShared::handleResponse removeHandler error.");
         }
     }

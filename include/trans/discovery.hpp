@@ -539,7 +539,7 @@ void Discovery<Pub>::loop()
 
         if (details::pollSockets(sockets_, timeout)) {
             recvDiscoveryMsg();
-            printCurrentState();
+            // printCurrentState();
         }
 
         updateHeartbeat();
@@ -567,7 +567,7 @@ void Discovery<Pub>::recvDiscoveryMsg()
             std::string src_addr = inet_ntoa(client_addr.sin_addr);
             uint16_t src_port = ntohs(client_addr.sin_port);
 
-            elog::debug("Received discovery msg from {}: {}.", src_addr, src_port);
+            // elog::debug("Received discovery msg from {}: {}.", src_addr, src_port);
 
             dispatchDiscoveryMsg(src_addr, recv_buf + sizeof(msg_len), msg_len);
         }
@@ -864,7 +864,7 @@ void Discovery<Pub>::sendMsg(const msgs::Discovery::Type type, const T& pub) con
 
     sendMulticast(discovery_msg);
 
-    elog::debug("Sending {}, msg [{}]", msgs::toString(type), pub.getTopic());
+    // elog::debug("Sending {}, msg [{}]", msgs::toString(type), pub.getTopic());
 }
 
 template<typename Pub>

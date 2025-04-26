@@ -105,7 +105,7 @@ bool HandlerStorage<T>::getFirstHandler(const std::string& topic, const std::str
     const auto& mp = data_.at(topic);
     for (const auto& [node_uuid, node_map]: mp) {
         for (const auto& [handler_uuid, handler1]: node_map) {
-            if (msg_type == handler1.getMsgType()) {
+            if (msg_type == handler1->getMsgType()) {
                 handler = handler1;
                 return true;
             }

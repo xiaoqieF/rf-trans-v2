@@ -81,7 +81,7 @@ bool TopicStorage<Pub>::hasTopic(const std::string& topic, const std::string& ms
     if (!hasTopic(topic)) {
         return false;
     }
-    auto& mp = data_[topic];
+    auto& mp = data_.at(topic);
     for (const auto& [pid, pub_list]: mp) {
         auto found = std::find_if(pub_list.begin(), pub_list.end(), [&msg_type] (const Pub& pub) {
             return pub.getMsgType() == msg_type || pub.getMsgType() == kGenericMessageType;
@@ -132,12 +132,12 @@ bool TopicStorage<Pub>::getPublisher(const std::string& topic, const std::string
         return false;
     }
 
-    auto& mp = data_[topic];
+    auto& mp = data_.at(topic);
     if (mp.find(p_uuid) == mp.end()) {
         return false;
     }
 
-    auto& pub_list = mp[p_uuid];
+    auto& pub_list = mp.at(p_uuid);
     auto found = std::find_if(pub_list.begin(), pub_list.end(), [&n_uuid] (const Pub& pub) {
         return pub.getNodeUuid() == n_uuid;
     });

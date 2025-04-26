@@ -1,5 +1,3 @@
-#pragma once
-
 #include "trans/handler_wrapper.hpp"
 
 namespace rf
