@@ -42,12 +42,14 @@ public:
     void clear() { data_.clear(); }
 
 private:
+    mutable std::mutex mutex_;
     TopicMap data_;
 };
 
 template<typename Pub>
 bool TopicStorage<Pub>::addPublisher(const Pub& publisher)
 {
+    std::lock_guard lk(mutex_);
     auto& mp = data_[publisher.getTopic()];
     if (mp.find(publisher.getProcessUuid()) != mp.end()) {
         auto& pub_list = mp[publisher.getProcessUuid()];
@@ -68,12 +70,14 @@ bool TopicStorage<Pub>::addPublisher(const Pub& publisher)
 template<typename Pub>
 bool TopicStorage<Pub>::hasTopic(const std::string& topic) const
 {
+    std::lock_guard lk(mutex_);
     return data_.find(topic) != data_.end();
 }
 
 template<typename Pub>
 bool TopicStorage<Pub>::hasTopic(const std::string& topic, const std::string& msg_type) const
 {
+    std::lock_guard lk(mutex_);
     if (!hasTopic(topic)) {
         return false;
     }
@@ -93,6 +97,7 @@ bool TopicStorage<Pub>::hasTopic(const std::string& topic, const std::string& ms
 template<typename Pub>
 bool TopicStorage<Pub>::hasAnyPublishers(const std::string& topic, const std::string& p_uuid) const
 {
+    std::lock_guard lk(mutex_);
     if (!hasTopic(topic)) {
         return false;
     }
@@ -105,6 +110,7 @@ bool TopicStorage<Pub>::hasAnyPublishers(const std::string& topic, const std::st
 template<typename Pub>
 bool TopicStorage<Pub>::hasPublisher(const std::string& addr) const
 {
+    std::lock_guard lk(mutex_);
     for (const auto& topic : data_) {
         for (const auto& proc : topic.second) {
             for (const auto& pub : proc.second) {
@@ -121,6 +127,7 @@ template<typename Pub>
 bool TopicStorage<Pub>::getPublisher(const std::string& topic, const std::string& p_uuid,
                     const std::string& n_uuid, Pub& publisher) const
 {
+    std::lock_guard lk(mutex_);
     if (data_.find(topic) == data_.end()) {
         return false;
     }
@@ -145,6 +152,7 @@ bool TopicStorage<Pub>::getPublisher(const std::string& topic, const std::string
 template<typename Pub>
 bool TopicStorage<Pub>::getPublishers(const std::string& topic, ProcessMap& info) const
 {
+    std::lock_guard lk(mutex_);
     if (!hasTopic(topic)) {
         return false;
     }
@@ -155,6 +163,7 @@ bool TopicStorage<Pub>::getPublishers(const std::string& topic, ProcessMap& info
 template<typename Pub>
 bool TopicStorage<Pub>::delPublishersByNode(const std::string& topic, const std::string& p_uuid, const std::string& n_uuid)
 {
+    std::lock_guard lk(mutex_);
     std::size_t count = 0;
     if (data_.find(topic) == data_.end()) {
         return false;
@@ -184,6 +193,7 @@ bool TopicStorage<Pub>::delPublishersByNode(const std::string& topic, const std:
 template<typename Pub>
 bool TopicStorage<Pub>::delPublishersByProc(const std::string& p_uuid)
 {
+    std::lock_guard lk(mutex_);
     std::size_t count = 0;
     for (auto it = data_.begin(); it != data_.end(); ) {
         auto& mp = it->second;
@@ -200,6 +210,7 @@ bool TopicStorage<Pub>::delPublishersByProc(const std::string& p_uuid)
 template<typename Pub>
 void TopicStorage<Pub>::getPublishersByProc(const std::string& p_uuid, std::map<std::string, std::vector<Pub>>& pubs) const
 {
+    std::lock_guard lk(mutex_);
     pubs.clear();
 
     for (const auto& topic : data_) {
@@ -217,6 +228,7 @@ void TopicStorage<Pub>::getPublishersByProc(const std::string& p_uuid, std::map<
 template<typename Pub>
 void TopicStorage<Pub>::getPublishersByNode(const std::string& p_uuid, const std::string& n_uuid, std::vector<Pub>& pubs) const
 {
+    std::lock_guard lk(mutex_);
     pubs.clear();
 
     for (const auto& topic : data_) {
@@ -236,6 +248,7 @@ void TopicStorage<Pub>::getPublishersByNode(const std::string& p_uuid, const std
 template<typename Pub>
 std::vector<std::string> TopicStorage<Pub>::getTopicList() const
 {
+    std::lock_guard lk(mutex_);
     std::vector<std::string> topics;
     for (const auto& topic : data_) {
         topics.push_back(topic.first);
@@ -246,6 +259,7 @@ std::vector<std::string> TopicStorage<Pub>::getTopicList() const
 template<typename Pub>
 void TopicStorage<Pub>::print(std::ostream& out) const
 {
+    std::lock_guard lk(mutex_);
     out << "---\n";
     for (auto const &topic : data_)
     {

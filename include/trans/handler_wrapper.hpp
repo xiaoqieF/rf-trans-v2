@@ -8,6 +8,8 @@ namespace rf
 {
 namespace trans
 {
+class NodeShared;
+
 class HandlerWrapper
 {
 public:
@@ -19,6 +21,20 @@ public:
 
 private:
     HandlerStorage<ISubscriptionHandler> normal_;
+
+    friend NodeShared;
+};
+
+struct HandlerInfo
+{
+    std::map<std::string, std::map<std::string, ISubscriptionHandlerPtr>> local_handlers;
+    bool have_local;
+};
+
+struct SubscriberInfo
+{
+    HandlerInfo local_handler_info;
+    bool have_remote;
 };
 
 } // namespace trans

@@ -2,10 +2,17 @@
 
 #include <string>
 #include <thread>
+#include <list>
+#include <thread>
+
+#include "zmq.hpp"
 
 #include "trans/trans_types.hpp"
 #include "trans/discovery.hpp"
 #include "trans/handler_wrapper.hpp"
+#include "trans/rep_handler.hpp"
+#include "trans/req_handler.hpp"
+#include "trans/publish_msg_details.hpp"
 
 
 namespace rf
@@ -15,28 +22,103 @@ namespace trans
 class NodeShared
 {
 public:
+    static NodeShared& getInstance();
+    bool publish(const std::string& topic, char* data, const size_t data_size,
+        DeallocFunc* ffn, const std::string& msg_type);
+    void sendPendingRemoteReqs(const std::string& topic,
+        const std::string& req_type, const std::string& rep_type);
+
+private:
+    NodeShared();
+    virtual ~NodeShared();
+
+    bool initializeSockets();
+    void receiveMsgLoop();
+    // todo: use thread pool to handle local pub
+    void localPubLoop();
+    void remotePubLoop();
+    void serviceHandleLoop();
+
+    void handleRequest(std::list<std::unique_ptr<RemoteRequest>>);
+    void handleResponse(std::list<std::unique_ptr<RemoteResponse>>);
+
+    void recvMsgUpdate();
+    void recvSrvRequest();
+    void recvSrvResponse();
+
+    void onNewConnection(const MessagePublisher& pub);
+    void onNewDisConnection(const MessagePublisher& pub);
+    void onNewSrvConnection(const ServicePublisher& pub);
+    void onNewSrvDisconnection(const ServicePublisher& pub);
+    void onNewRegistration(const MessagePublisher& pub);
+    void onEndRegistration(const MessagePublisher& pub);
+
+    HandlerInfo checkHandlerInfo(const std::string& topic) const;
+    SubscriberInfo checkSubscriberInfo(const std::string& topic, const std::string& msg_type) const;
 
 private:
     static constexpr int kDefaultMsgDiscoveryPort = 10317;
     static constexpr int kDefaultSrvDiscoveryPort = 10318;
 
-    std::string response_receiver_id_;
-    std::string replier_id_;
-    std::string process_id_;
-
-    std::thread receive_msg_thread_;
+    std::string response_receiver_uuid_{generateUuidV4()};
+    std::string replier_uuid_{generateUuidV4()};
+    std::string process_uuid_{generateUuidV4()};
 
     const std::string discovery_ip_{"239.255.0.7"};
     int msg_discovery_port_{kDefaultMsgDiscoveryPort};
     int srv_discovery_port_{kDefaultSrvDiscoveryPort};
 
-    TopicStorage<MessagePublisher> connections_;
-    TopicStorage<MessagePublisher> remove_subscribers_;
-    std::vector<std::string> service_connections_;
+    mutable std::recursive_mutex pub_sub_mutex_;
+    std::thread receive_msg_thread_;
 
+    TopicStorage<MessagePublisher> connections_;        // keep all remote publishers
+    TopicStorage<MessagePublisher> remote_subscribers_; // keep all remote subscribers
     HandlerWrapper local_subscribers_;
 
+    mutable std::recursive_mutex service_mutex_;
+    /// TODO: make this a multiset.
+    std::vector<std::string> service_connections_;      // keep remote service server addr
+    HandlerStorage<IRepHandler> repliers_;               // local repliers
+    HandlerStorage<IReqHandler> requests_;               // store pending requests
 
+    std::string host_address_;
+
+    std::unique_ptr<zmq::context_t> context_;
+
+    std::unique_ptr<zmq::socket_t> subscriber_;
+    std::unique_ptr<zmq::socket_t> publisher_;
+    std::string my_address_;
+
+    std::unique_ptr<zmq::socket_t> requester_;
+    std::unique_ptr<zmq::socket_t> response_receiver_;
+    std::string my_requester_address_;
+
+    std::unique_ptr<zmq::socket_t> replier_;
+    std::string my_replier_address_;
+
+    std::unique_ptr<MsgDiscovery> msg_discovery_;
+    std::unique_ptr<SrvDiscovery> srv_discovery_;
+
+    std::atomic_bool exit_{false};
+
+    // For local publish, handle it in local_pub_thread
+    std::thread local_pub_thread_;
+    std::list<std::unique_ptr<PublishMsgDetails>> local_pub_queue_;
+    mutable std::mutex local_pub_mutex_;
+    std::condition_variable local_pub_cv_;
+
+    // For remote msg, handle it in single thread
+    std::thread remote_msg_handle_thread_;
+    std::list<std::unique_ptr<RemoteMsg>> remote_msg_queue_;
+    mutable std::mutex remote_msg_mutex_;
+    std::condition_variable remote_msg_cv_;
+
+    // For remote Service request and response, handle it in single thread
+    std::thread service_handle_thread_;
+    std::list<std::unique_ptr<RemoteRequest>> remote_request_queue_;
+    std::list<std::unique_ptr<RemoteResponse>> remote_response_queue_;
+    mutable std::mutex remote_service_msg_mutex_;
+    std::condition_variable remote_service_msg_cv_;
 };
 
 } // namespace trans

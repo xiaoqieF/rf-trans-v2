@@ -10,6 +10,8 @@ class MessageInfo
 {
 public:
     MessageInfo() = default;
+    MessageInfo(const std::string& topic, const std::string& msg_type)
+        : topic_(topic), msg_type_(msg_type) {}
     MessageInfo(const MessageInfo&) = default;
     MessageInfo(MessageInfo&&) = default;
     ~MessageInfo() = default;
@@ -22,6 +24,35 @@ public:
 private:
     std::string topic_;
     std::string msg_type_;
+};
+
+struct RemoteMsg
+{
+    std::string topic;
+    std::string sender;
+    std::string data;
+    std::string msg_type;
+};
+
+struct RemoteRequest
+{
+    std::string topic;
+    std::string sender;
+    std::string node_uuid;
+    std::string req_uuid;
+    std::string req_data;
+    std::string dst_id;
+    std::string req_type;
+    std::string rep_type;
+};
+
+struct RemoteResponse
+{
+    std::string topic;
+    std::string node_uuid;
+    std::string req_uuid;
+    std::string rep_data;
+    std::string result_str;
 };
 
 } // namespace trans

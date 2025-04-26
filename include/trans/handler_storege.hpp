@@ -13,8 +13,11 @@ namespace trans
 template<typename T>
 class HandlerStorage
 {
+// handler_uuid --> handler
 using RequesterHandlerMap = std::map<std::string, std::shared_ptr<T>>;
+// node_uuid --> RequesterHandlerMap
 using NodeHandlerMap = std::map<std::string, RequesterHandlerMap>;
+// topic --> NodeHandlerMap
 using TopicHandlerMap = std::map<std::string, NodeHandlerMap>;
 
 public:
@@ -31,7 +34,11 @@ public:
     bool getFirstHandler(const std::string& topic, const std::string& msg_type, std::shared_ptr<T>& handler) const;
     bool getHandler(const std::string& topic, const std::string& node_uuid,
         const std::string& handler_uuid, std::shared_ptr<T>& handler) const;
-    TopicHandlerMap& getAllHandlers() { return data_; }
+    TopicHandlerMap& getAllHandlers()
+    {
+        std::lock_guard lk(mutex_);
+        return data_;
+    }
 
     void addHandler(const std::string& topic, const std::string& node_uuid, const std::shared_ptr<T>& handler);
 
@@ -42,18 +49,21 @@ public:
     bool removeHandlersForNode(const std::string& topic, const std::string& node_uuid);
 
 private:
+    mutable std::mutex mutex_;
     TopicHandlerMap data_;
 };
 
 template<typename T>
 void HandlerStorage<T>::addHandler(const std::string& topic, const std::string& node_uuid, const std::shared_ptr<T>& handler)
 {
+    std::lock_guard lk(mutex_);
     data_[topic][node_uuid].emplace(handler.getUuid(), handler);
 }
 
 template<typename T>
 bool HandlerStorage<T>::getHandlers(const std::string& topic, NodeHandlerMap& handlers) const
 {
+    std::lock_guard lk(mutex_);
     if (data_.find(topic) == data_.end()) {
         return false;
     }
@@ -66,6 +76,7 @@ template<typename T>
 bool HandlerStorage<T>::getFirstHandler(const std::string& topic, const std::string& req_type_name,
     const std::string& rep_type_name, std::shared_ptr<T>& handler) const
 {
+    std::lock_guard lk(mutex_);
     if (data_.find(topic) == data_.end()) {
         return false;
     }
@@ -86,6 +97,7 @@ bool HandlerStorage<T>::getFirstHandler(const std::string& topic, const std::str
 template<typename T>
 bool HandlerStorage<T>::getFirstHandler(const std::string& topic, const std::string& msg_type, std::shared_ptr<T>& handler) const
 {
+    std::lock_guard lk(mutex_);
     if (data_.find(topic) == data_.end()) {
         return false;
     }
@@ -107,6 +119,7 @@ template<typename T>
 bool HandlerStorage<T>::getHandler(const std::string& topic, const std::string& node_uuid,
     const std::string& handler_uuid, std::shared_ptr<T>& handler) const
 {
+    std::lock_guard lk(mutex_);
     if (data_.find(topic) == data_.end()) {
         return false;
     }
@@ -126,6 +139,7 @@ bool HandlerStorage<T>::getHandler(const std::string& topic, const std::string& 
 template<typename T>
 bool HandlerStorage<T>::hasHandlersForTopic(const std::string& topic) const
 {
+    std::lock_guard lk(mutex_);
     if (data_.find(topic) == data_.end()) {
         return false;
     }
@@ -135,6 +149,7 @@ bool HandlerStorage<T>::hasHandlersForTopic(const std::string& topic) const
 template<typename T>
 bool HandlerStorage<T>::hasHandlersForNode(const std::string& topic, const std::string node_uuid) const
 {
+    std::lock_guard lk(mutex_);
     if (data_.find(topic) == data_.end()) {
         return false;
     }
@@ -145,6 +160,7 @@ bool HandlerStorage<T>::hasHandlersForNode(const std::string& topic, const std::
 template<typename T>
 bool HandlerStorage<T>::removeHandler(const std::string& topic, const std::string& node_uuid, const std::string& req_uuid)
 {
+    std::lock_guard lk(mutex_);
     std::size_t count = 0;
     if (data_.find(topic) != data_.end()) {
         if (data_[topic].find(node_uuid) != data_[topic].end()) {
@@ -165,6 +181,7 @@ bool HandlerStorage<T>::removeHandler(const std::string& topic, const std::strin
 template<typename T>
 bool HandlerStorage<T>::removeHandlersForNode(const std::string& topic, const std::string& node_uuid)
 {
+    std::lock_guard lk(mutex_);
     std::size_t count = 0;
     if (data_.find(topic) != data_.end()) {
         count = data_[topic].erase(node_uuid);

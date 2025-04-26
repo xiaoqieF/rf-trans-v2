@@ -116,7 +116,7 @@ private:
     Timestamp time_next_activity_;
     unsigned int heartbeat_count_{0};
 
-    mutable std::mutex mutex_;
+    mutable std::recursive_mutex mutex_;
     std::thread discover_loop_thread_;
 
     std::atomic<bool> enabled_{false};
