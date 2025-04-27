@@ -2,7 +2,7 @@
 
 #include "trans/trans_types.hpp"
 #include "trans/subscription_handler.hpp"
-#include "trans/handler_storege.hpp"
+#include "trans/handler_storage.hpp"
 
 namespace rf
 {
