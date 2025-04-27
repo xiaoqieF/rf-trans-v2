@@ -463,7 +463,7 @@ void NodeShared::receiveMsgLoop()
         if (items[1].revents & ZMQ_POLLIN) {
             recvSrvRequest();
         }
-        if (items[0].revents & ZMQ_POLLIN) {
+        if (items[2].revents & ZMQ_POLLIN) {
             recvSrvResponse();
         }
     }
@@ -480,22 +480,22 @@ void NodeShared::recvMsgUpdate()
             if (!subscriber_->recv(msg)) {
                 return;
             }
-            remote_msg->topic = std::string(reinterpret_cast<char*>(msg.data(), msg.size()));
+            remote_msg->topic = std::string(reinterpret_cast<char*>(msg.data()), msg.size());
 
             if (!subscriber_->recv(msg)) {
                 return;
             }
-            remote_msg->sender = std::string(reinterpret_cast<char*>(msg.data(), msg.size()));
+            remote_msg->sender = std::string(reinterpret_cast<char*>(msg.data()), msg.size());
 
             if (!subscriber_->recv(msg)) {
                 return;
             }
-            remote_msg->data = std::string(reinterpret_cast<char*>(msg.data(), msg.size()));
+            remote_msg->data = std::string(reinterpret_cast<char*>(msg.data()), msg.size());
 
             if (!subscriber_->recv(msg)) {
                 return;
             }
-            remote_msg->msg_type = std::string(reinterpret_cast<char*>(msg.data(), msg.size()));
+            remote_msg->msg_type = std::string(reinterpret_cast<char*>(msg.data()), msg.size());
         } catch (const zmq::error_t& e) {
             elog::error("subscriver socket recv error: {}", e.what());
             return;

@@ -42,7 +42,7 @@ public:
     void clear() { data_.clear(); }
 
 private:
-    mutable std::mutex mutex_;
+    mutable std::recursive_mutex mutex_;
     TopicMap data_;
 };
 
@@ -235,7 +235,7 @@ void TopicStorage<Pub>::getPublishersByNode(const std::string& p_uuid, const std
         auto& mp = topic.second;
 
         if (mp.find(p_uuid) != mp.end()) {
-            auto& pub_list = mp[p_uuid];
+            auto& pub_list = mp.at(p_uuid);
             for (const auto& pub : pub_list) {
                 if (pub.getNodeUuid() == n_uuid) {
                     pubs.push_back(pub);

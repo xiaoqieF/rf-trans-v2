@@ -62,7 +62,9 @@ bool SubscriptionHandler<T>::runLocalCallback(const ProtoMsg& msg, const Message
         return false;
     }
 
-    cb_(msg, info);
+    auto msg_ptr = google::protobuf::down_cast<const T*>(msg);
+
+    cb_(*msg_ptr, info);
     return true;
 }
 
@@ -71,7 +73,7 @@ const ProtoMsgPtr SubscriptionHandler<T>::createMsg(const std::string& data, con
 {
     auto msg_ptr = std::make_shared<T>();
 
-    if (!msg_ptr.ParseFromString(data)) {
+    if (!msg_ptr->ParseFromString(data)) {
         elog::error("SubscriptionHandler::createMsg() ParseFromString error");
     }
 

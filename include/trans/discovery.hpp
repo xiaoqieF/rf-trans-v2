@@ -567,7 +567,7 @@ void Discovery<Pub>::recvDiscoveryMsg()
             std::string src_addr = inet_ntoa(client_addr.sin_addr);
             uint16_t src_port = ntohs(client_addr.sin_port);
 
-            // elog::debug("Received discovery msg from {}: {}.", src_addr, src_port);
+            elog::trace("Received discovery msg from {}: {}. receive_len: {}", src_addr, src_port, received);
 
             dispatchDiscoveryMsg(src_addr, recv_buf + sizeof(msg_len), msg_len);
         }
@@ -614,7 +614,10 @@ void Discovery<Pub>::dispatchDiscoveryMsg(const std::string& from_ip, char* msg,
         subscribers_req_cb = subscribers_cb_;
     }
 
-    elog::debug("Handle msg: {}", msgs::toString(discovery_msg.type()));
+    if (discovery_msg.type() != msgs::Discovery::HEARTBEAT) {
+        elog::trace("Handle msg: {}, topic: \"{}\"", msgs::toString(discovery_msg.type()),
+            discovery_msg.has_pub() ? discovery_msg.pub().topic() : discovery_msg.sub().topic());
+    }
     switch (discovery_msg.type()) {
         case msgs::Discovery::ADVERTISE:
         {
