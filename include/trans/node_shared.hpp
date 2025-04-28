@@ -42,8 +42,8 @@ private:
     void remotePubLoop();
     void serviceHandleLoop();
 
-    void handleRequest(const std::list<std::unique_ptr<RemoteRequest>>&);
-    void handleResponse(const std::list<std::unique_ptr<RemoteResponse>>&);
+    void handleRequest(const std::deque<std::unique_ptr<RemoteRequest>>&);
+    void handleResponse(const std::deque<std::unique_ptr<RemoteResponse>>&);
 
     void recvMsgUpdate();
     void recvSrvRequest();
@@ -60,6 +60,7 @@ private:
     SubscriberInfo checkSubscriberInfo(const std::string& topic, const std::string& msg_type) const;
 
 private:
+    static constexpr size_t kMsgQueueLimit = 1000;
     static constexpr int kDefaultMsgDiscoveryPort = 10319;
     static constexpr int kDefaultSrvDiscoveryPort = 10320;
 
@@ -106,20 +107,20 @@ private:
 
     // For local publish, handle it in local_pub_thread
     std::thread local_pub_thread_;
-    std::list<std::unique_ptr<PublishMsgDetails>> local_pub_queue_;
+    std::deque<std::unique_ptr<PublishMsgDetails>> local_pub_queue_;
     mutable std::mutex local_pub_mutex_;
     std::condition_variable local_pub_cv_;
 
     // For remote msg, handle it in single thread
     std::thread remote_msg_handle_thread_;
-    std::list<std::unique_ptr<RemoteMsg>> remote_msg_queue_;
+    std::deque<std::unique_ptr<RemoteMsg>> remote_msg_queue_;
     mutable std::mutex remote_msg_mutex_;
     std::condition_variable remote_msg_cv_;
 
     // For remote Service request and response, handle it in single thread
     std::thread service_handle_thread_;
-    std::list<std::unique_ptr<RemoteRequest>> remote_request_queue_;
-    std::list<std::unique_ptr<RemoteResponse>> remote_response_queue_;
+    std::deque<std::unique_ptr<RemoteRequest>> remote_request_queue_;
+    std::deque<std::unique_ptr<RemoteResponse>> remote_response_queue_;
     mutable std::mutex remote_service_msg_mutex_;
     std::condition_variable remote_service_msg_cv_;
 };

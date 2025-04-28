@@ -2,6 +2,8 @@
 
 #include <string>
 
+#include "zmq.hpp"
+
 namespace rf
 {
 namespace trans
@@ -30,7 +32,7 @@ struct RemoteMsg
 {
     std::string topic;
     std::string sender;
-    std::string data;
+    zmq::message_t data;
     std::string msg_type;
 };
 

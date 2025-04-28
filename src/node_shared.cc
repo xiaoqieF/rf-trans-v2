@@ -414,7 +414,7 @@ void NodeShared::localPubLoop()
     using namespace std::chrono_literals;
 
     while (!exit_) {
-        std::list<std::unique_ptr<PublishMsgDetails>> msg_details_tmp;
+        std::deque<std::unique_ptr<PublishMsgDetails>> msg_details_tmp;
 
         {
             std::unique_lock lock(local_pub_mutex_);
@@ -490,7 +490,9 @@ void NodeShared::recvMsgUpdate()
             if (!subscriber_->recv(msg)) {
                 return;
             }
-            remote_msg->data = std::string(reinterpret_cast<char*>(msg.data()), msg.size());
+            // We just move the msg instead of copy
+            remote_msg->data = std::move(msg);
+            msg.rebuild();
 
             if (!subscriber_->recv(msg)) {
                 return;
@@ -504,6 +506,10 @@ void NodeShared::recvMsgUpdate()
 
     std::lock_guard lock(remote_msg_mutex_);
     remote_msg_queue_.push_back(std::move(remote_msg));
+    if (remote_msg_queue_.size() > kMsgQueueLimit) {
+        elog::warn("Remote msg queue size > {}, drop msg of topic [{}]", kMsgQueueLimit, remote_msg_queue_.front()->topic);
+        remote_msg_queue_.pop_front();
+    }
     remote_msg_cv_.notify_one();
 }
 
@@ -512,7 +518,7 @@ void NodeShared::remotePubLoop()
     using namespace std::chrono_literals;
 
     while (!exit_) {
-        std::list<std::unique_ptr<RemoteMsg>> remote_msgs_tmp;
+        std::deque<std::unique_ptr<RemoteMsg>> remote_msgs_tmp;
         {
             std::unique_lock lock(remote_msg_mutex_);
             if (remote_msg_queue_.empty()) {
@@ -548,7 +554,7 @@ void NodeShared::remotePubLoop()
 
                     if (!proto_msg) {
                         // Do deserialize
-                        proto_msg = handler->createMsg(msg->data, msg->msg_type);
+                        proto_msg = handler->createMsg(msg->data.data(), msg->data.size(), msg->msg_type);
                         if (!proto_msg) {
                             return;
                         }
@@ -713,8 +719,8 @@ void NodeShared::serviceHandleLoop()
     using namespace std::chrono_literals;
 
     while (!exit_) {
-        std::list<std::unique_ptr<RemoteRequest>> remote_requests_tmp;
-        std::list<std::unique_ptr<RemoteResponse>> remote_responses_tmp;
+        std::deque<std::unique_ptr<RemoteRequest>> remote_requests_tmp;
+        std::deque<std::unique_ptr<RemoteResponse>> remote_responses_tmp;
 
         {
             std::unique_lock lock(remote_service_msg_mutex_);
@@ -733,7 +739,7 @@ void NodeShared::serviceHandleLoop()
     }
 }
 
-void NodeShared::handleRequest(const std::list<std::unique_ptr<RemoteRequest>>& requests)
+void NodeShared::handleRequest(const std::deque<std::unique_ptr<RemoteRequest>>& requests)
 {
     using namespace std::chrono_literals;
 
@@ -800,7 +806,7 @@ void NodeShared::handleRequest(const std::list<std::unique_ptr<RemoteRequest>>& 
     }
 }
 
-void NodeShared::handleResponse(const std::list<std::unique_ptr<RemoteResponse>>& responses)
+void NodeShared::handleResponse(const std::deque<std::unique_ptr<RemoteResponse>>& responses)
 {
     for (auto& response : responses) {
         IReqHandlerPtr req_handler;

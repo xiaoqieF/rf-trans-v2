@@ -23,7 +23,7 @@ public:
 
     virtual std::string getMsgType() = 0;
     virtual bool runLocalCallback(const ProtoMsg& msg, const MessageInfo& info) = 0;
-    virtual const ProtoMsgPtr createMsg(const std::string& data, const std::string& type) const = 0;
+    virtual const ProtoMsgPtr createMsg(const void* data, size_t len, const std::string& type) const = 0;
 
     std::string getNodeUuid() const { return node_uuid_; }
     std::string getHandlerUuid() const { return handler_uuid_; }
@@ -48,7 +48,7 @@ public:
     std::string getMsgType() override { return T{}.GetTypeName(); }
 
     bool runLocalCallback(const ProtoMsg& msg, const MessageInfo& info) override;
-    const ProtoMsgPtr createMsg(const std::string& data, const std::string& type) const override;
+    const ProtoMsgPtr createMsg(const void* data, size_t len, const std::string& type) const override;
 
 private:
     MsgCallback<T> cb_;
@@ -62,18 +62,18 @@ bool SubscriptionHandler<T>::runLocalCallback(const ProtoMsg& msg, const Message
         return false;
     }
 
-    auto msg_ptr = google::protobuf::down_cast<const T*>(msg);
+    auto msg_ptr = google::protobuf::down_cast<const T*>(&msg);
 
     cb_(*msg_ptr, info);
     return true;
 }
 
 template<typename T>
-const ProtoMsgPtr SubscriptionHandler<T>::createMsg(const std::string& data, const std::string&) const
+const ProtoMsgPtr SubscriptionHandler<T>::createMsg(const void* data, size_t len, const std::string&) const
 {
     auto msg_ptr = std::make_shared<T>();
 
-    if (!msg_ptr->ParseFromString(data)) {
+    if (!msg_ptr->ParseFromArray(data, len)) {
         elog::error("SubscriptionHandler::createMsg() ParseFromString error");
     }
 
