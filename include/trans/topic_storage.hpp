@@ -6,7 +6,7 @@
 
 #include "elog/elog.h"
 #include "trans/trans_types.hpp"
-#include "trans/publisher.hpp"
+#include "trans/publisher_info.hpp"
 
 namespace rf
 {

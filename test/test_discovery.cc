@@ -34,18 +34,18 @@ int main()
     const std::string ctrl1 = "tcp://127.0.0.1:12346";
 
     auto puuid1 = generate_uuid_v4();
-    rf::trans::Discovery<rf::trans::MessagePublisher> dis(puuid1, "239.255.0.7", 10317);
+    rf::trans::Discovery<rf::trans::MessagePublisherInfo> dis(puuid1, "239.255.0.7", 10317);
     dis.start();
 
-    rf::trans::MessagePublisher pub("topic", addr1, ctrl1, puuid1, "nuuid", "t", rf::trans::AdvertiseMessageOptions{});
+    rf::trans::MessagePublisherInfo pub("topic", addr1, ctrl1, puuid1, "nuuid", "t", rf::trans::AdvertiseMessageOptions{});
 
     dis.advertise(pub);
 
-    rf::trans::Discovery<rf::trans::MessagePublisher> dis2(generate_uuid_v4(), "239.255.0.7", 10317);
+    rf::trans::Discovery<rf::trans::MessagePublisherInfo> dis2(generate_uuid_v4(), "239.255.0.7", 10317);
     dis2.start();
     std::this_thread::sleep_for(100ms);
 
-    dis2.setConnectionCb([](const rf::trans::MessagePublisher& pub) {
+    dis2.setConnectionCb([](const rf::trans::MessagePublisherInfo& pub) {
         elog::info("connection cb");
     });
 

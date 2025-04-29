@@ -15,7 +15,7 @@
 #include "trans/msgs.hpp"
 #include "trans/net_utils.hpp"
 #include "trans/trans_types.hpp"
-#include "trans/publisher.hpp"
+#include "trans/publisher_info.hpp"
 #include "trans/topic_storage.hpp"
 
 namespace rf
@@ -39,9 +39,9 @@ public:
 
     // Try to discover [topic] immediately, whic send a SUBSCRIBE msg about topic
     bool discover(const std::string& topic) const;
-    void sendSubscribersRep(const MessagePublisher& pub) const;
-    void registerNode(const MessagePublisher& pub) const;
-    void unRegisterNode(const MessagePublisher& pub) const;
+    void sendSubscribersRep(const MessagePublisherInfo& pub) const;
+    void registerNode(const MessagePublisherInfo& pub) const;
+    void unRegisterNode(const MessagePublisherInfo& pub) const;
 
     const TopicStorage<Pub>& getInfo() const;
     bool getPublishers(const std::string& topic, AddressMap<Pub>& publishers) const;
@@ -126,8 +126,8 @@ private:
     std::condition_variable initialize_cv_;
 };
 
-using MsgDiscovery = Discovery<MessagePublisher>;
-using SrvDiscovery = Discovery<ServicePublisher>;
+using MsgDiscovery = Discovery<MessagePublisherInfo>;
+using SrvDiscovery = Discovery<ServicePublisherInfo>;
 
 namespace details
 {
@@ -220,7 +220,7 @@ Discovery<Pub>::~Discovery()
         discover_loop_thread_.join();
     }
 
-    sendMsg(msgs::Discovery::BYE, Publisher("", "", process_uuid_, "", AdvertiseOptions{}));
+    sendMsg(msgs::Discovery::BYE, PublisherInfo("", "", process_uuid_, "", AdvertiseOptions{}));
 
     for (const auto sock : sockets_) {
         close(sock);
@@ -327,19 +327,19 @@ bool Discovery<Pub>::discover(const std::string& topic) const
 }
 
 template<typename Pub>
-void Discovery<Pub>::sendSubscribersRep(const MessagePublisher& pub) const
+void Discovery<Pub>::sendSubscribersRep(const MessagePublisherInfo& pub) const
 {
     sendMsg(msgs::Discovery::SUBSCRIBERS_REP, pub);
 }
 
 template<typename Pub>
-void Discovery<Pub>::registerNode(const MessagePublisher& pub) const
+void Discovery<Pub>::registerNode(const MessagePublisherInfo& pub) const
 {
     sendMsg(msgs::Discovery::NEW_CONNECTION, pub);
 }
 
 template<typename Pub>
-void Discovery<Pub>::unRegisterNode(const MessagePublisher& pub) const
+void Discovery<Pub>::unRegisterNode(const MessagePublisherInfo& pub) const
 {
     sendMsg(msgs::Discovery::END_CONNECTION, pub);
 }
@@ -374,7 +374,7 @@ void Discovery<Pub>::getTopicList(std::vector<std::string>& topics)
         remote_subscribers_.clear();
     }
 
-    Publisher pub("", "", process_uuid_, "", AdvertiseOptions{});
+    PublisherInfo pub("", "", process_uuid_, "", AdvertiseOptions{});
     sendMsg(msgs::Discovery::SUBSCRIBERS_REQ, pub);
 
     waitForInit();
@@ -767,7 +767,7 @@ void Discovery<Pub>::updateHeartbeat()
         return;
     }
 
-    Publisher pub("", "", process_uuid_, "", AdvertiseServiceOptions{});
+    PublisherInfo pub("", "", process_uuid_, "", AdvertiseServiceOptions{});
     sendMsg(msgs::Discovery::HEARTBEAT, pub);
 
     // Re-Advertise topics that are advertised inside this process

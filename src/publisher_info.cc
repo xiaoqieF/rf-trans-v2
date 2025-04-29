@@ -1,14 +1,14 @@
-#include "trans/publisher.hpp"
+#include "trans/publisher_info.hpp"
 
 namespace rf
 {
 namespace trans
 {
-Publisher::Publisher(const std::string& topic,
-                     const std::string& addr,
-                     const std::string& process_uuid,
-                     const std::string& node_uuid,
-                     const AdvertiseOptions& opts)
+PublisherInfo::PublisherInfo(const std::string& topic,
+                             const std::string& addr,
+                             const std::string& process_uuid,
+                             const std::string& node_uuid,
+                             const AdvertiseOptions& opts)
     : topic_(topic),
       addr_(addr),
       process_uuid_(process_uuid),
@@ -17,14 +17,14 @@ Publisher::Publisher(const std::string& topic,
 {
 }
 
-bool Publisher::operator==(const Publisher& rhs) const
+bool PublisherInfo::operator==(const PublisherInfo& rhs) const
 {
     return topic_ == rhs.topic_ && addr_ == rhs.addr_ &&
            process_uuid_ == rhs.process_uuid_ && node_uuid_ == rhs.node_uuid_ &&
            opts_ == rhs.opts_;
 }
 
-std::ostream& operator==(std::ostream& out, const Publisher& msg)
+std::ostream& operator==(std::ostream& out, const PublisherInfo& msg)
 {
     out << "Publisher:\n"
         << "\tTopic: [" << msg.topic_ << "]\n"
@@ -35,7 +35,7 @@ std::ostream& operator==(std::ostream& out, const Publisher& msg)
     return out;
 }
 
-void Publisher::fillDiscovery(msgs::Discovery& msg) const
+void PublisherInfo::fillDiscovery(msgs::Discovery& msg) const
 {
     msgs::Discovery::Publisher* pub = msg.mutable_pub();
     pub->set_topic(topic_);
@@ -59,7 +59,7 @@ void Publisher::fillDiscovery(msgs::Discovery& msg) const
     }
 }
 
-void Publisher::setFromDiscovery(const msgs::Discovery& msg)
+void PublisherInfo::setFromDiscovery(const msgs::Discovery& msg)
 {
     if (msg.has_sub()) {
         topic_ = msg.sub().topic();
@@ -85,29 +85,29 @@ void Publisher::setFromDiscovery(const msgs::Discovery& msg)
     }
 }
 
-MessagePublisher::MessagePublisher(const std::string& topic,
+MessagePublisherInfo::MessagePublisherInfo(const std::string& topic,
                      const std::string& addr,
                      const std::string& ctrl,
                      const std::string& process_uuid,
                      const std::string& node_uuid,
                      const std::string& msg_type,
                      const AdvertiseMessageOptions& opts)
-    : Publisher(topic, addr, process_uuid, node_uuid, opts),
+    : PublisherInfo(topic, addr, process_uuid, node_uuid, opts),
       ctrl_(ctrl),
       msg_type_(msg_type),
       msg_opts_(opts)
 {
 }
 
-bool MessagePublisher::operator==(const MessagePublisher& pub) const
+bool MessagePublisherInfo::operator==(const MessagePublisherInfo& pub) const
 {
-    return Publisher::operator==(pub) && ctrl_ == pub.ctrl_ &&
+    return PublisherInfo::operator==(pub) && ctrl_ == pub.ctrl_ &&
         msg_type_ == pub.msg_type_ && msg_opts_ == pub.msg_opts_;
 }
 
-void MessagePublisher::fillDiscovery(msgs::Discovery& msg) const
+void MessagePublisherInfo::fillDiscovery(msgs::Discovery& msg) const
 {
-    Publisher::fillDiscovery(msg);
+    PublisherInfo::fillDiscovery(msg);
     msgs::Discovery::Publisher* pub = msg.mutable_pub();
 
     pub->mutable_msg_pub()->set_ctrl(ctrl_);
@@ -115,12 +115,12 @@ void MessagePublisher::fillDiscovery(msgs::Discovery& msg) const
     pub->mutable_msg_pub()->set_throttled(msg_opts_.throttled());
     pub->mutable_msg_pub()->set_msgs_per_sec(msg_opts_.getMsgsPerSec());
 }
-void MessagePublisher::setFromDiscovery(const msgs::Discovery& msg)
+void MessagePublisherInfo::setFromDiscovery(const msgs::Discovery& msg)
 {
-    Publisher::setFromDiscovery(msg);
+    PublisherInfo::setFromDiscovery(msg);
     ctrl_ = msg.pub().msg_pub().ctrl();
     msg_type_ = msg.pub().msg_pub().msg_type();
-    msg_opts_.setScope(Publisher::getOptions().getScope());
+    msg_opts_.setScope(PublisherInfo::getOptions().getScope());
     if (!msg.pub().msg_pub().throttled()) {
         msg_opts_.setMsgsPerSec(kUnthrottled);
     } else {
@@ -128,7 +128,7 @@ void MessagePublisher::setFromDiscovery(const msgs::Discovery& msg)
     }
 }
 
-std::ostream& operator<<(std::ostream& out, const MessagePublisher& msg)
+std::ostream& operator<<(std::ostream& out, const MessagePublisherInfo& msg)
 {
     out << "Publisher:\n"
         << "\tTopic: [" << msg.topic_ << "]\n"
@@ -141,15 +141,15 @@ std::ostream& operator<<(std::ostream& out, const MessagePublisher& msg)
     return out;
 }
 
-bool ServicePublisher::operator==(const ServicePublisher& rhs) const
+bool ServicePublisherInfo::operator==(const ServicePublisherInfo& rhs) const
 {
-    return Publisher::operator==(rhs) && socket_id_ == rhs.socket_id_ &&
+    return PublisherInfo::operator==(rhs) && socket_id_ == rhs.socket_id_ &&
         req_type_name_ == rhs.req_type_name_ && rep_type_name_ == rhs.rep_type_name_;
 }
 
-void ServicePublisher::fillDiscovery(msgs::Discovery& msg) const
+void ServicePublisherInfo::fillDiscovery(msgs::Discovery& msg) const
 {
-    Publisher::fillDiscovery(msg);
+    PublisherInfo::fillDiscovery(msg);
     msgs::Discovery::Publisher* pub = msg.mutable_pub();
 
     pub->mutable_srv_pub()->set_socket_id(socket_id_);
@@ -157,16 +157,16 @@ void ServicePublisher::fillDiscovery(msgs::Discovery& msg) const
     pub->mutable_srv_pub()->set_response_type(rep_type_name_);
 }
 
-void ServicePublisher::setFromDiscovery(const msgs::Discovery& msg)
+void ServicePublisherInfo::setFromDiscovery(const msgs::Discovery& msg)
 {
-    Publisher::setFromDiscovery(msg);
-    src_opts_.setScope(Publisher::getOptions().getScope());
+    PublisherInfo::setFromDiscovery(msg);
+    src_opts_.setScope(PublisherInfo::getOptions().getScope());
     socket_id_ = msg.pub().srv_pub().request_type();
     req_type_name_ = msg.pub().srv_pub().request_type();
     rep_type_name_ = msg.pub().srv_pub().response_type();
 }
 
-std::ostream& operator<<(std::ostream& out, const ServicePublisher& msg)
+std::ostream& operator<<(std::ostream& out, const ServicePublisherInfo& msg)
 {
     out << "Publisher:\n"
         << "\tTopic: [" << msg.topic_ << "]\n"

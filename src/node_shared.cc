@@ -65,27 +65,27 @@ NodeShared::NodeShared()
     receive_msg_thread_ = std::thread(&NodeShared::receiveMsgLoop, this);
     pthread_setname_np(receive_msg_thread_.native_handle(), "rf_recv_msg_loop");
 
-    msg_discovery_->setConnectionCb([this] (const MessagePublisher& pub) {
+    msg_discovery_->setConnectionCb([this] (const MessagePublisherInfo& pub) {
         this->onNewConnection(pub);
     });
 
-    msg_discovery_->setDisconnectionCb([this] (const MessagePublisher& pub) {
+    msg_discovery_->setDisconnectionCb([this] (const MessagePublisherInfo& pub) {
         this->onNewDisConnection(pub);
     });
 
-    msg_discovery_->setRegisterationCb([this] (const MessagePublisher& pub) {
+    msg_discovery_->setRegisterationCb([this] (const MessagePublisherInfo& pub) {
         this->onNewRegistration(pub);
     });
 
-    msg_discovery_->setUnregisterationCb([this] (const MessagePublisher& pub) {
+    msg_discovery_->setUnregisterationCb([this] (const MessagePublisherInfo& pub) {
         this->onEndRegistration(pub);
     });
 
-    srv_discovery_->setConnectionCb([this] (const ServicePublisher& pub) {
+    srv_discovery_->setConnectionCb([this] (const ServicePublisherInfo& pub) {
         this->onNewSrvConnection(pub);
     });
 
-    srv_discovery_->setDisconnectionCb([this] (const ServicePublisher& pub) {
+    srv_discovery_->setDisconnectionCb([this] (const ServicePublisherInfo& pub) {
         this->onNewSrvDisconnection(pub);
     });
 
@@ -139,7 +139,7 @@ bool NodeShared::initializeSockets()
     return true;
 }
 
-void NodeShared::onNewConnection(const MessagePublisher& pub)
+void NodeShared::onNewConnection(const MessagePublisherInfo& pub)
 {
     std::string topic = pub.getTopic();
     std::string addr = pub.getAddr();
@@ -167,7 +167,7 @@ void NodeShared::onNewConnection(const MessagePublisher& pub)
     connections_.addPublisher(pub);
     elog::debug("Connected to [{}] for data.", addr);
 
-    MessagePublisher pub1(pub);
+    MessagePublisherInfo pub1(pub);
     pub1.setProcessUuid(process_uuid_);
     pub1.setCtrl(pub.getProcessUuid());
 
@@ -179,7 +179,7 @@ void NodeShared::onNewConnection(const MessagePublisher& pub)
     }
 }
 
-void NodeShared::onNewDisConnection(const MessagePublisher& pub)
+void NodeShared::onNewDisConnection(const MessagePublisherInfo& pub)
 {
     std::string topic = pub.getTopic();
     std::string remote_proc_uuid = pub.getProcessUuid();
@@ -190,7 +190,7 @@ void NodeShared::onNewDisConnection(const MessagePublisher& pub)
     std::lock_guard lock(pub_sub_mutex_);
     remote_subscribers_.delPublishersByNode(topic, remote_proc_uuid, node_uuid);
 
-    MessagePublisher conn;
+    MessagePublisherInfo conn;
     if (!connections_.getPublisher(topic, remote_proc_uuid, node_uuid, conn)) {
         return;
     }
@@ -198,7 +198,7 @@ void NodeShared::onNewDisConnection(const MessagePublisher& pub)
     connections_.delPublishersByNode(topic, remote_proc_uuid, node_uuid);
 }
 
-void NodeShared::onNewSrvConnection(const ServicePublisher& pub)
+void NodeShared::onNewSrvConnection(const ServicePublisherInfo& pub)
 {
     std::string topic = pub.getTopic();
     std::string addr = pub.getAddr();
@@ -223,7 +223,7 @@ void NodeShared::onNewSrvConnection(const ServicePublisher& pub)
     }
 }
 
-void NodeShared::onNewSrvDisconnection(const ServicePublisher& pub)
+void NodeShared::onNewSrvDisconnection(const ServicePublisherInfo& pub)
 {
     std::string addr = pub.getAddr();
 
@@ -234,7 +234,7 @@ void NodeShared::onNewSrvDisconnection(const ServicePublisher& pub)
     elog::debug("Service call disconnection callback");
 }
 
-void NodeShared::onNewRegistration(const MessagePublisher& pub)
+void NodeShared::onNewRegistration(const MessagePublisherInfo& pub)
 {
     if (pub.getCtrl() != process_uuid_) {
         return;
@@ -250,7 +250,7 @@ void NodeShared::onNewRegistration(const MessagePublisher& pub)
     remote_subscribers_.addPublisher(pub);
 }
 
-void NodeShared::onEndRegistration(const MessagePublisher& pub)
+void NodeShared::onEndRegistration(const MessagePublisherInfo& pub)
 {
     if (!pub.getCtrl().empty() && pub.getCtrl() != process_uuid_) {
         return;
@@ -296,7 +296,7 @@ void NodeShared::sendPendingRemoteReqs(const std::string& topic,
     std::string responser_addr;
     std::string responser_id;
 
-    std::map<std::string, std::vector<ServicePublisher>> addresses;
+    std::map<std::string, std::vector<ServicePublisherInfo>> addresses;
 
     srv_discovery_->getPublishers(topic, addresses);
     if (addresses.empty()) {

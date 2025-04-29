@@ -49,12 +49,12 @@ private:
     void recvSrvRequest();
     void recvSrvResponse();
 
-    void onNewConnection(const MessagePublisher& pub);
-    void onNewDisConnection(const MessagePublisher& pub);
-    void onNewSrvConnection(const ServicePublisher& pub);
-    void onNewSrvDisconnection(const ServicePublisher& pub);
-    void onNewRegistration(const MessagePublisher& pub);
-    void onEndRegistration(const MessagePublisher& pub);
+    void onNewConnection(const MessagePublisherInfo& pub);
+    void onNewDisConnection(const MessagePublisherInfo& pub);
+    void onNewSrvConnection(const ServicePublisherInfo& pub);
+    void onNewSrvDisconnection(const ServicePublisherInfo& pub);
+    void onNewRegistration(const MessagePublisherInfo& pub);
+    void onEndRegistration(const MessagePublisherInfo& pub);
 
     HandlerInfo checkHandlerInfo(const std::string& topic) const;
     SubscriberInfo checkSubscriberInfo(const std::string& topic, const std::string& msg_type) const;
@@ -75,8 +75,8 @@ private:
     mutable std::recursive_mutex pub_sub_mutex_;
     std::thread receive_msg_thread_;
 
-    TopicStorage<MessagePublisher> connections_;        // keep all remote publishers
-    TopicStorage<MessagePublisher> remote_subscribers_; // keep all remote subscribers
+    TopicStorage<MessagePublisherInfo> connections_;        // keep all remote publishers
+    TopicStorage<MessagePublisherInfo> remote_subscribers_; // keep all remote subscribers
     HandlerWrapper local_subscribers_;
 
     mutable std::recursive_mutex service_mutex_;

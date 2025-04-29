@@ -10,16 +10,16 @@ namespace rf
 namespace trans
 {
 
-class Publisher
+class PublisherInfo
 {
 public:
-    Publisher() = default;
-    Publisher(const std::string& topic,
+    PublisherInfo() = default;
+    PublisherInfo(const std::string& topic,
               const std::string& addr,
               const std::string& process_uuid,
               const std::string& node_uuid,
               const AdvertiseOptions& opts);
-    virtual ~Publisher() = default;
+    virtual ~PublisherInfo() = default;
 
     std::string getTopic() const { return topic_; }
     void setTopic(const std::string topic) { topic_ = topic; }
@@ -36,9 +36,9 @@ public:
     virtual const AdvertiseOptions& getOptions() const { return opts_; }
     void setOptions(const AdvertiseOptions& opts) { opts_ = opts; }
 
-    bool operator==(const Publisher& rhs) const;
-    bool operator!=(const Publisher& rhs) const { return !(*this == rhs); }
-    friend std::ostream& operator==(std::ostream& out, const Publisher& msg);
+    bool operator==(const PublisherInfo& rhs) const;
+    bool operator!=(const PublisherInfo& rhs) const { return !(*this == rhs); }
+    friend std::ostream& operator==(std::ostream& out, const PublisherInfo& msg);
 
     virtual void fillDiscovery(msgs::Discovery& msg) const;
     virtual void setFromDiscovery(const msgs::Discovery& msg);
@@ -53,18 +53,18 @@ private:
     AdvertiseOptions opts_;   // This member is not used when we have a derived publisher
 };
 
-class MessagePublisher : public Publisher
+class MessagePublisherInfo : public PublisherInfo
 {
 public:
-    MessagePublisher() = default;
-    MessagePublisher(const std::string& topic,
-                     const std::string& addr,
-                     const std::string& ctrl,
-                     const std::string& process_uuid,
-                     const std::string& node_uuid,
-                     const std::string& msg_type,
-                     const AdvertiseMessageOptions& opts);
-    virtual ~MessagePublisher() = default;
+    MessagePublisherInfo() = default;
+    MessagePublisherInfo(const std::string& topic,
+                         const std::string& addr,
+                         const std::string& ctrl,
+                         const std::string& process_uuid,
+                         const std::string& node_uuid,
+                         const std::string& msg_type,
+                         const AdvertiseMessageOptions& opts);
+    virtual ~MessagePublisherInfo() = default;
 
     std::string getCtrl() const { return ctrl_; }
     void setCtrl(const std::string& ctrl) { ctrl_ = ctrl; }
@@ -75,13 +75,13 @@ public:
     const AdvertiseMessageOptions& getOptions() const override { return msg_opts_; }
     void setOptions(const AdvertiseMessageOptions& opts) { msg_opts_ = opts; }
 
-    bool operator==(const MessagePublisher& pub) const;
-    bool operator!=(const MessagePublisher& pub) const { return !(*this == pub); }
+    bool operator==(const MessagePublisherInfo& pub) const;
+    bool operator!=(const MessagePublisherInfo& pub) const { return !(*this == pub); }
 
     void fillDiscovery(msgs::Discovery& msg) const override final;
     void setFromDiscovery(const msgs::Discovery& msg) override final;
 
-    friend std::ostream& operator<<(std::ostream& out, const MessagePublisher& msg);
+    friend std::ostream& operator<<(std::ostream& out, const MessagePublisherInfo& msg);
 
 private:
     std::string ctrl_;
@@ -89,11 +89,11 @@ private:
     AdvertiseMessageOptions msg_opts_;
 };
 
-class ServicePublisher : public Publisher
+class ServicePublisherInfo : public PublisherInfo
 {
 public:
-    ServicePublisher() = default;
-    ServicePublisher(const std::string& topic,
+    ServicePublisherInfo() = default;
+    ServicePublisherInfo(const std::string& topic,
                      const std::string& addr,
                      const std::string& id,
                      const std::string& process_uuid,
@@ -101,7 +101,7 @@ public:
                      const std::string& req_type,
                      const std::string& rep_type,
                      const AdvertiseServiceOptions& opts);
-    virtual ~ServicePublisher() = default;
+    virtual ~ServicePublisherInfo() = default;
 
     std::string getSocketId() const { return socket_id_; }
     void setSocketId(const std::string& sock_id) { socket_id_ = sock_id; }
@@ -115,13 +115,13 @@ public:
     const AdvertiseServiceOptions& getOptions() const override { return src_opts_; }
     void setOptions(const AdvertiseServiceOptions& opts) { src_opts_ = opts; }
 
-    bool operator==(const ServicePublisher& rhs) const;
-    bool operator!=(const ServicePublisher& rhs) const { return !(*this == rhs); }
+    bool operator==(const ServicePublisherInfo& rhs) const;
+    bool operator!=(const ServicePublisherInfo& rhs) const { return !(*this == rhs); }
 
     void fillDiscovery(msgs::Discovery& msg) const override final;
     void setFromDiscovery(const msgs::Discovery& msg) override final;
 
-    friend std::ostream& operator<<(std::ostream& out, const ServicePublisher& srv);
+    friend std::ostream& operator<<(std::ostream& out, const ServicePublisherInfo& srv);
 
 private:
     std::string socket_id_;
