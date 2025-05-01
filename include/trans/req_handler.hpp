@@ -41,7 +41,7 @@ public:
     std::string getNodeUuid() const { return node_uuid_; }
     std::string getHandlerUuid() const { return handler_uuid_; }
     std::string getRep() const { return rep_; }
-    bool hasResult() const { return result_; }
+    bool getResult() const { return result_; }
     bool hasRequested() const { return requested_; }
     void setRequested(const bool value) { requested_ = value; }
 
@@ -70,16 +70,16 @@ public:
     }
 
     std::shared_ptr<Rep> createMsg(const std::string& data) const;
-    void setCallback(const std::function<void(const Rep& rep, const bool result)>& cb) { cb_ = cb; }
-    void setMessage(const Req* req_msg);
+    void setCallback(const std::function<void(const std::shared_ptr<const Rep> rep, const bool result)>& cb) { cb_ = cb; }
+    void setMessage(const std::shared_ptr<Req>& req_msg);
     bool serialize(std::string& buffer) const override;
     void notifyResult(const std::string& rep, const bool result) override;
     std::string getReqTypeName() const override;
     std::string getRepTypeName() const override;
 
 private:
-    Req req_msg_;
-    std::function<void(const Rep& rep, const bool result)> cb_;
+    std::shared_ptr<Req> req_msg_;
+    std::function<void(const std::shared_ptr<const Rep> rep, const bool result)> cb_;
 };
 
 template<typename Req, typename Rep>
@@ -94,20 +94,15 @@ std::shared_ptr<Rep> ReqHandler<Req, Rep>::createMsg(const std::string& data) co
 }
 
 template<typename Req, typename Rep>
-void ReqHandler<Req, Rep>::setMessage(const Req* req_msg)
+void ReqHandler<Req, Rep>::setMessage(const std::shared_ptr<Req>& req_msg)
 {
-    if (!req_msg) {
-        elog::error("ReqHandler::setMessage() error, req_msg is null");
-        return;
-    }
-
-    req_msg_.CopyFrom(*req_msg);
+    req_msg_ = req_msg;
 }
 
 template<typename Req, typename Rep>
 bool ReqHandler<Req, Rep>::serialize(std::string& buffer) const
 {
-    if (!req_msg_.SerializeToString(&buffer)) {
+    if (!req_msg_->SerializeToString(&buffer)) {
         elog::error("ReqHandler::serialize() error serializing the request");
         return false;
     }

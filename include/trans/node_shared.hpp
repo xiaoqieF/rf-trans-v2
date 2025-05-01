@@ -30,6 +30,8 @@ public:
         DeallocFunc* ffn, const std::string& msg_type);
     void sendPendingRemoteReqs(const std::string& topic,
         const std::string& req_type, const std::string& rep_type);
+    bool advertisePublisher(const ServicePublisherInfo& pub);
+    bool getServicePublishers(const std::string& topic, AddressMap<ServicePublisherInfo>& publishers) const;
 
 private:
     NodeShared();
@@ -123,6 +125,9 @@ private:
     std::deque<std::unique_ptr<RemoteResponse>> remote_response_queue_;
     mutable std::mutex remote_service_msg_mutex_;
     std::condition_variable remote_service_msg_cv_;
+
+    friend class Node;
+    friend class Publisher;
 };
 
 } // namespace trans

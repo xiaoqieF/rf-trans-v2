@@ -10,7 +10,7 @@ namespace trans
 {
 struct PublishMsgDetails
 {
-    std::vector<ISubscriptionHandler> local_handlers;
+    std::vector<ISubscriptionHandlerPtr> local_handlers;
     std::unique_ptr<char[]> shared_buffer{nullptr};
     std::unique_ptr<ProtoMsg> msg_copy{nullptr};
     size_t msg_size{0};

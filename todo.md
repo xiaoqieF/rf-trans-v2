@@ -1,0 +1,2 @@
+- [ ] Try to get MsgTypeName in compile time
+- [ ]

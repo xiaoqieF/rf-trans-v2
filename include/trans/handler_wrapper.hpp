@@ -8,8 +8,6 @@ namespace rf
 {
 namespace trans
 {
-class NodeShared;
-
 class HandlerWrapper
 {
 public:
@@ -22,7 +20,8 @@ public:
 private:
     HandlerStorage<ISubscriptionHandler> normal_;
 
-    friend NodeShared;
+    friend class NodeShared;
+    friend class Node;
 };
 
 struct HandlerInfo

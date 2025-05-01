@@ -408,6 +408,15 @@ void NodeShared::sendPendingRemoteReqs(const std::string& topic,
         }
     }
 }
+bool NodeShared::advertisePublisher(const ServicePublisherInfo& pub)
+{
+    return srv_discovery_->advertise(pub);
+}
+
+bool NodeShared::getServicePublishers(const std::string& topic, AddressMap<ServicePublisherInfo>& publishers) const
+{
+    return srv_discovery_->getPublishers(topic, publishers);
+}
 
 void NodeShared::localPubLoop()
 {
@@ -434,9 +443,10 @@ void NodeShared::localPubLoop()
         }
 
         for (auto& msg_detail : msg_details_tmp) {
+            std::shared_ptr<ProtoMsg> shared_msg = std::move(msg_detail->msg_copy);
             for (auto& handler : msg_detail->local_handlers) {
                 // for efficiency, dont use try catch.
-                handler.runLocalCallback(*(msg_detail->msg_copy.get()), msg_detail->info);
+                handler->runLocalCallback(shared_msg, msg_detail->info);
             }
         }
     }
@@ -560,7 +570,7 @@ void NodeShared::remotePubLoop()
                         }
                     }
 
-                    handler->runLocalCallback(*proto_msg, MessageInfo(msg->topic, msg->msg_type));
+                    handler->runLocalCallback(proto_msg, MessageInfo(msg->topic, msg->msg_type));
                 }
             }
         }
@@ -570,7 +580,6 @@ void NodeShared::remotePubLoop()
 HandlerInfo NodeShared::checkHandlerInfo(const std::string& topic) const
 {
     HandlerInfo info;
-    std::lock_guard lock(pub_sub_mutex_);
     info.have_local = local_subscribers_.normal_.getHandlers(topic, info.local_handlers);
 
     return info;
@@ -579,7 +588,6 @@ HandlerInfo NodeShared::checkHandlerInfo(const std::string& topic) const
 SubscriberInfo NodeShared::checkSubscriberInfo(const std::string& topic, const std::string& msg_type) const
 {
     SubscriberInfo info;
-    std::lock_guard lock(pub_sub_mutex_);
     info.local_handler_info.have_local = local_subscribers_.normal_.getHandlers(topic, info.local_handler_info.local_handlers);
     info.have_remote = remote_subscribers_.hasTopic(topic, msg_type);
 

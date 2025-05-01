@@ -1,0 +1,7 @@
+syntax = "proto3";
+package rf.msgs;
+
+message Empty
+{
+    bool unused = 1;
+}

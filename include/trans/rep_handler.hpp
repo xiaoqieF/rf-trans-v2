@@ -15,9 +15,9 @@ public:
     IRepHandler() : handler_uuid_(generateUuidV4()) {}
     virtual ~IRepHandler() = default;
 
-    virtual bool runLocalCallback(const ProtoMsg& msg_req, ProtoMsg& msg_rep) = 0;
+    virtual bool runLocalCallback(const std::shared_ptr<const ProtoMsg> msg_req, std::shared_ptr<ProtoMsg> msg_rep) = 0;
     // serialized input and output
-    virtual bool runCallback(const std::string& req, std::string rep) = 0;
+    virtual bool runCallback(const std::string& req, std::string& rep) = 0;
 
     virtual std::string getReqTypeName() const = 0;
     virtual std::string getRepTypeName() const = 0;
@@ -26,7 +26,6 @@ public:
 
 protected:
     std::string handler_uuid_;
-
 };
 
 template<typename Req, typename Rep>
@@ -39,11 +38,11 @@ public:
         static_assert(std::is_base_of_v<google::protobuf::Message, Rep>, "Rep must be derived from google::protobuf::Message");
     }
 
-    void setCallback(const std::function<bool(const Req&, Rep&)>& cb) { cb_ = cb; }
+    void setCallback(const std::function<bool(const std::shared_ptr<const Req>, std::shared_ptr<Rep>)> cb) { cb_ = cb; }
 
-    bool runLocalCallback(const ProtoMsg& msg_req, ProtoMsg& msg_rep) override;
+    bool runLocalCallback(std::shared_ptr<const ProtoMsg> msg_req, std::shared_ptr<ProtoMsg> msg_rep) override;
     // serialized input and output
-    bool runCallback(const std::string& req, std::string rep) override;
+    bool runCallback(const std::string& req, std::string& rep) override;
 
     std::string getReqTypeName() const override;
     std::string getRepTypeName() const override;
@@ -52,22 +51,25 @@ private:
     std::shared_ptr<Req> createMsg(const std::string& data) const;
 
 private:
-    std::function<bool(const Req&, Rep&)> cb_;
+    std::function<bool(const std::shared_ptr<const Req>, std::shared_ptr<Rep>)> cb_;
 };
 
 template<typename Req, typename Rep>
-bool RepHandler<Req, Rep>::runLocalCallback(const ProtoMsg& msg_req, ProtoMsg& msg_rep)
+bool RepHandler<Req, Rep>::runLocalCallback(const std::shared_ptr<const ProtoMsg> msg_req, std::shared_ptr<ProtoMsg> msg_rep)
 {
     if (!cb_) {
         elog::error("RepHandler::runLocalCallback() error: callback is null");
         return false;
     }
 
-    cb_(msg_req, msg_rep);
+    auto msg_req_ptr = std::dynamic_pointer_cast<const Req>(msg_req);
+    auto msg_rep_ptr = std::dynamic_pointer_cast<Rep>(msg_rep);
+
+    return cb_(msg_req_ptr, msg_rep_ptr);
 }
 
 template<typename Req, typename Rep>
-bool RepHandler<Req, Rep>::runCallback(const std::string& req, std::string rep)
+bool RepHandler<Req, Rep>::runCallback(const std::string& req, std::string& rep)
 {
     if (!cb_) {
         elog::error("RepHandler::runCallback() error: callback is null");
@@ -79,13 +81,13 @@ bool RepHandler<Req, Rep>::runCallback(const std::string& req, std::string rep)
         return false;
     }
 
-    Rep msg_rep;
+    auto msg_rep = std::make_shared<Rep>();
     if (!cb_(msg_req, msg_rep)) {
         elog::warn("ReqHandler::runCallback(), user callback return false.");
         return false;
     }
 
-    if (!msg_rep.SerializeToString(&rep)) {
+    if (!msg_rep->SerializeToString(&rep)) {
         elog::error("RepHandler::runCallback() error: response serialize failed.");
         return false;
     }

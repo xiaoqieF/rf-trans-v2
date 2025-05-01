@@ -18,6 +18,7 @@
 #include "trans/publisher_info.hpp"
 #include "trans/topic_storage.hpp"
 
+/// TODO: move some unnecessary mutex
 namespace rf
 {
 namespace trans
@@ -32,7 +33,7 @@ public:
     virtual ~Discovery();
 
     void start();
-    void waitForInit() const;
+    void waitForInit();
 
     bool advertise(const Pub& publisher);
     bool unadvertise(const std::string& topic, const std::string& node_uuid);
@@ -116,7 +117,7 @@ private:
     Timestamp time_next_activity_;
     unsigned int heartbeat_count_{0};
 
-    mutable std::recursive_mutex mutex_;
+    mutable std::mutex mutex_;
     std::thread discover_loop_thread_;
 
     std::atomic<bool> enabled_{false};
@@ -228,11 +229,11 @@ Discovery<Pub>::~Discovery()
 }
 
 template<typename Pub>
-void Discovery<Pub>::waitForInit() const
+void Discovery<Pub>::waitForInit()
 {
     std::unique_lock lock(mutex_);
     if (!initialized_) {
-        initialize_cv_.wait(lock, [this] { return initialized_; });
+        initialize_cv_.wait(lock, [this] { return initialized_.load(); });
     }
 }
 
@@ -284,6 +285,8 @@ bool Discovery<Pub>::unadvertise(const std::string& topic, const std::string& no
     if (publisher.getOptions().getScope() != Scope::PROCESS) {
         sendMsg(msgs::Discovery::UNADVERTISE, publisher);
     }
+
+    return true;
 }
 
 template<typename Pub>

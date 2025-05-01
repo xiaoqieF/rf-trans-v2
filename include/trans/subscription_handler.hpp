@@ -22,7 +22,7 @@ public:
     virtual ~ISubscriptionHandler() = default;
 
     virtual std::string getMsgType() = 0;
-    virtual bool runLocalCallback(const ProtoMsg& msg, const MessageInfo& info) = 0;
+    virtual bool runLocalCallback(const ProtoMsgConstPtr& msg, const MessageInfo& info) = 0;
     virtual const ProtoMsgPtr createMsg(const void* data, size_t len, const std::string& type) const = 0;
 
     std::string getNodeUuid() const { return node_uuid_; }
@@ -47,7 +47,7 @@ public:
     // todo: can i get type name when compile time
     std::string getMsgType() override { return T{}.GetTypeName(); }
 
-    bool runLocalCallback(const ProtoMsg& msg, const MessageInfo& info) override;
+    bool runLocalCallback(const ProtoMsgConstPtr& msg, const MessageInfo& info) override;
     const ProtoMsgPtr createMsg(const void* data, size_t len, const std::string& type) const override;
 
 private:
@@ -55,16 +55,16 @@ private:
 };
 
 template<typename T>
-bool SubscriptionHandler<T>::runLocalCallback(const ProtoMsg& msg, const MessageInfo& info)
+bool SubscriptionHandler<T>::runLocalCallback(const ProtoMsgConstPtr& msg, const MessageInfo& info)
 {
     if (!cb_) {
         elog::error("SubscriptionHandler::runLocalCallback error, callback is null");
         return false;
     }
 
-    auto msg_ptr = google::protobuf::down_cast<const T*>(&msg);
+    auto msg_ptr = std::dynamic_pointer_cast<const T>(msg);
 
-    cb_(*msg_ptr, info);
+    cb_(msg_ptr, info);
     return true;
 }
 
