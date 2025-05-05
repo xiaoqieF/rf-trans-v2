@@ -1,2 +1,5 @@
 - [ ] Try to get MsgTypeName in compile time
-- [ ]
+- [ ] Python bind
+- [ ] Command line tools
+- [ ] Performance & benchmarck
+- [ ] Remove all todos of the code
