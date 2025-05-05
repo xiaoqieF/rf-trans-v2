@@ -141,6 +141,22 @@ std::ostream& operator<<(std::ostream& out, const MessagePublisherInfo& msg)
     return out;
 }
 
+ServicePublisherInfo::ServicePublisherInfo(const std::string& topic,
+                    const std::string& addr,
+                    const std::string& socket_id,
+                    const std::string& process_uuid,
+                    const std::string& node_uuid,
+                    const std::string& req_type,
+                    const std::string& rep_type,
+                    const AdvertiseServiceOptions& opts)
+    : PublisherInfo(topic, addr, process_uuid, node_uuid, opts),
+      socket_id_(socket_id),
+      req_type_name_(req_type),
+      rep_type_name_(rep_type),
+      srv_opts_(opts)
+{
+}
+
 bool ServicePublisherInfo::operator==(const ServicePublisherInfo& rhs) const
 {
     return PublisherInfo::operator==(rhs) && socket_id_ == rhs.socket_id_ &&
@@ -160,8 +176,8 @@ void ServicePublisherInfo::fillDiscovery(msgs::Discovery& msg) const
 void ServicePublisherInfo::setFromDiscovery(const msgs::Discovery& msg)
 {
     PublisherInfo::setFromDiscovery(msg);
-    src_opts_.setScope(PublisherInfo::getOptions().getScope());
-    socket_id_ = msg.pub().srv_pub().request_type();
+    srv_opts_.setScope(PublisherInfo::getOptions().getScope());
+    socket_id_ = msg.pub().srv_pub().socket_id();
     req_type_name_ = msg.pub().srv_pub().request_type();
     rep_type_name_ = msg.pub().srv_pub().response_type();
 }
@@ -176,7 +192,7 @@ std::ostream& operator<<(std::ostream& out, const ServicePublisherInfo& msg)
         << "\tSocket ID: " << msg.socket_id_ << "\n"
         << "\t Request type: " << msg.req_type_name_ << "\n"
         << "\t Response type: " << msg.rep_type_name_ << "\n"
-        << msg.src_opts_;
+        << msg.srv_opts_;
     return out;
 }
 

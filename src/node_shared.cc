@@ -13,6 +13,7 @@ NodeShared& NodeShared::getInstance()
 
 NodeShared::~NodeShared()
 {
+    elog::info("NodeShared destructed.");
     exit_ = true;
 
     local_pub_cv_.notify_all();
@@ -158,6 +159,7 @@ void NodeShared::onNewConnection(const MessagePublisherInfo& pub)
     }
 
     if (!connections_.hasPublisher(addr)) {
+        elog::debug("Connect to pub.");
         subscriber_->connect(addr.c_str());
     }
 
@@ -322,7 +324,7 @@ void NodeShared::sendPendingRemoteReqs(const std::string& topic,
         return;
     }
 
-    elog::debug("Found a service call responser at [{}]", responser_addr);
+    elog::debug("Found a service call responser at [{}], responser_id[{}]", responser_addr, responser_id);
 
     std::lock_guard lock(service_mutex_);
     if (std::find(service_connections_.begin(), service_connections_.end(), responser_addr) == service_connections_.end()) {
@@ -772,7 +774,6 @@ void NodeShared::handleRequest(const std::deque<std::unique_ptr<RemoteRequest>>&
                 request->sender) == service_connections_.end()) {
                 replier_->connect(request->sender.c_str());
                 service_connections_.push_back(request->sender);
-                /// TODO: do not use sleep to sync, do connect when discovery
                 std::this_thread::sleep_for(100ms);
 
                 elog::debug("Connected to [{}] for sending a response", request->sender);

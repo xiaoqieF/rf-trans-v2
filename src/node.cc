@@ -39,7 +39,7 @@ Node::~Node()
     }
 }
 
-NodeShared& Node::nodeShared() const
+NodeShared& Node::getNodeShared() const
 {
     return impl_->node_shared;
 }
@@ -48,7 +48,7 @@ bool Node::subscribeHelper(const std::string& topic)
 {
     impl_->subscribed_topics.insert(topic);
 
-    if (!nodeShared().msg_discovery_->discover(topic)) {
+    if (!getNodeShared().msg_discovery_->discover(topic)) {
         elog::error("Node::subscribeHelper(): Error discovering topic[{}]", topic);
         return false;
     }
@@ -59,9 +59,9 @@ bool Node::subscribeHelper(const std::string& topic)
 bool Node::unadvertiseService(const std::string& topic)
 {
     impl_->advertised_srvs.erase(topic);
-    nodeShared().response_handlers_.removeHandlersForNode(topic, getNodeUuid());
+    getNodeShared().response_handlers_.removeHandlersForNode(topic, getNodeUuid());
 
-    if (!nodeShared().srv_discovery_->unadvertise(topic, getNodeUuid())) {
+    if (!getNodeShared().srv_discovery_->unadvertise(topic, getNodeUuid())) {
         return false;
     }
 
@@ -71,26 +71,27 @@ bool Node::unadvertiseService(const std::string& topic)
 /// TODO: move this function to node_shared
 bool Node::unsubscribe(const std::string& topic)
 {
+    elog::trace("unsubscribe topic[{}]", topic);
     /// note that we dont remove msg in local_pub_queue manually.
     /// when unsubscribed called, callback may be called in a short duration
-    nodeShared().local_subscribers_.removeHandlersForNode(topic, getNodeUuid());
+    getNodeShared().local_subscribers_.removeHandlersForNode(topic, getNodeUuid());
 
     impl_->subscribed_topics.erase(topic);
 
     // If I am the last subscriber, remove the filter for this topic.
-    if (!nodeShared().local_subscribers_.hasSubscriber(topic)) {
-        std::lock_guard lk(nodeShared().pub_sub_mutex_);
-        nodeShared().subscriber_->set(zmq::sockopt::unsubscribe, topic);
+    if (!getNodeShared().local_subscribers_.hasSubscriber(topic)) {
+        std::lock_guard lk(getNodeShared().pub_sub_mutex_);
+        getNodeShared().subscriber_->set(zmq::sockopt::unsubscribe, topic);
     }
 
     AddressMap<MessagePublisherInfo> addresses;
 
-    nodeShared().msg_discovery_->getPublishers(topic, addresses);
+    getNodeShared().msg_discovery_->getPublishers(topic, addresses);
 
     for (auto& [p_uuid, pubs] : addresses) {
-        MessagePublisherInfo pub(topic, nodeShared().my_address_, p_uuid, nodeShared().process_uuid_, getNodeUuid(),
+        MessagePublisherInfo pub(topic, getNodeShared().my_address_, p_uuid, getNodeShared().process_uuid_, getNodeUuid(),
         kGenericMessageType, AdvertiseMessageOptions{});
-        NodeShared().msg_discovery_->unRegisterNode(pub);
+        getNodeShared().msg_discovery_->unRegisterNode(pub);
     }
 
     return true;
@@ -110,7 +111,7 @@ std::set<std::string> Node::getAdvertisedTopics()
 {
     std::set<std::string> topics;
     std::vector<MessagePublisherInfo> pubs;
-    nodeShared().msg_discovery_->getInfo().getPublishersByNode(nodeShared().process_uuid_, impl_->node_uuid, pubs);
+    getNodeShared().msg_discovery_->getInfo().getPublishersByNode(getNodeShared().process_uuid_, impl_->node_uuid, pubs);
     for (const auto& pub : pubs) {
         topics.insert(pub.getTopic());
     }
@@ -121,7 +122,7 @@ std::set<std::string> Node::getAdvertisedTopics()
 std::vector<std::string> Node::getTopicList() const
 {
     std::vector<std::string> topics;
-    nodeShared().msg_discovery_->getTopicList(topics);
+    getNodeShared().msg_discovery_->getTopicList(topics);
 
     return topics;
 }
@@ -129,7 +130,7 @@ std::vector<std::string> Node::getTopicList() const
 std::vector<std::string> Node::getServiceList() const
 {
     std::vector<std::string> topics;
-    nodeShared().srv_discovery_->getTopicList(topics);
+    getNodeShared().srv_discovery_->getTopicList(topics);
 
     return topics;
 }

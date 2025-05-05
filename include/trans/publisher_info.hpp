@@ -95,7 +95,7 @@ public:
     ServicePublisherInfo() = default;
     ServicePublisherInfo(const std::string& topic,
                      const std::string& addr,
-                     const std::string& id,
+                     const std::string& socket_id,
                      const std::string& process_uuid,
                      const std::string& node_uuid,
                      const std::string& req_type,
@@ -112,8 +112,8 @@ public:
     std::string getRepTypeName() const { return rep_type_name_; }
     void setRepTypeName(const std::string& rep_type) { rep_type_name_ = rep_type; }
 
-    const AdvertiseServiceOptions& getOptions() const override { return src_opts_; }
-    void setOptions(const AdvertiseServiceOptions& opts) { src_opts_ = opts; }
+    const AdvertiseServiceOptions& getOptions() const override { return srv_opts_; }
+    void setOptions(const AdvertiseServiceOptions& opts) { srv_opts_ = opts; }
 
     bool operator==(const ServicePublisherInfo& rhs) const;
     bool operator!=(const ServicePublisherInfo& rhs) const { return !(*this == rhs); }
@@ -127,7 +127,7 @@ private:
     std::string socket_id_;
     std::string req_type_name_;
     std::string rep_type_name_;
-    AdvertiseServiceOptions src_opts_;
+    AdvertiseServiceOptions srv_opts_;
 };
 
 } // namespace trans

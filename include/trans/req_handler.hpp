@@ -115,7 +115,7 @@ void ReqHandler<Req, Rep>::notifyResult(const std::string& rep, const bool resul
 {
     if (cb_) {
         auto msg = createMsg(rep);
-        cb_(*msg, result);
+        cb_(msg, result);
     } else {
         rep_ = rep;
         result_ = result;

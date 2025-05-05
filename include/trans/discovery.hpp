@@ -210,7 +210,7 @@ Discovery<Pub>::Discovery(const std::string& process_uuid,
     multicast_addr_.sin_addr.s_addr = inet_addr(multicast_group_.c_str());
     multicast_addr_.sin_port = htons(port);
 
-    printCurrentState();
+    // printCurrentState();
 }
 
 template<typename Pub>
@@ -570,7 +570,7 @@ void Discovery<Pub>::recvDiscoveryMsg()
             std::string src_addr = inet_ntoa(client_addr.sin_addr);
             uint16_t src_port = ntohs(client_addr.sin_port);
 
-            elog::trace("Received discovery msg from {}: {}. receive_len: {}", src_addr, src_port, received);
+            // elog::trace("Received discovery msg from {}: {}. receive_len: {}", src_addr, src_port, received);
 
             dispatchDiscoveryMsg(src_addr, recv_buf + sizeof(msg_len), msg_len);
         }

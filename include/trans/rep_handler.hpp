@@ -29,7 +29,7 @@ protected:
 };
 
 template<typename Req, typename Rep>
-class RepHandler : IRepHandler
+class RepHandler : public IRepHandler
 {
 public:
     RepHandler()
