@@ -302,13 +302,14 @@ void NodeShared::sendPendingRemoteReqs(const std::string& topic,
 
     srv_discovery_->getPublishers(topic, addresses);
     if (addresses.empty()) {
+        elog::warn("No service publishers found in topic[{}]", topic);
         return;
     }
 
     bool found = false;
     for (auto& [process_uuid, publishers] : addresses) {
         for (auto& pub : publishers) {
-            if (pub.getReqTypeName() == req_type && pub.getRepTypeName() == req_type) {
+            if (pub.getReqTypeName() == req_type && pub.getRepTypeName() == rep_type) {
                 found = true;
                 responser_addr = pub.getAddr();
                 responser_id = pub.getSocketId();

@@ -59,7 +59,6 @@ template<typename T>
 void HandlerStorage<T>::addHandler(const std::string& topic, const std::string& node_uuid, const std::shared_ptr<T>& handler)
 {
     std::lock_guard lk(mutex_);
-    elog::debug("emplace handler: topic[{}], h_uuid[{}]", topic, handler->getHandlerUuid());
     data_[topic][node_uuid].emplace(handler->getHandlerUuid(), handler);
 }
 

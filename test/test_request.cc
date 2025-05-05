@@ -14,7 +14,18 @@ int main()
         request->set_name("from remote");
         node2.request<rf::msgs::ExampleMsg, rf::msgs::ExampleMsg>("/service_topic", request,
             [](const std::shared_ptr<const rf::msgs::ExampleMsg> reply, const bool result) {
-            elog::info("requset to remote success, result: {}, response: {}", result, reply->DebugString());
+            elog::info("[normal_service]requset to remote success, result: {}, response: {}", result, reply->ShortDebugString());
+            return;
+        });
+
+        node2.request<rf::msgs::ExampleMsg>("/service_topic_no_response", request, [](const bool result) {
+            elog::info("[no_response]request success. result: {}", result);
+            return;
+        });
+
+        node2.request<rf::msgs::ExampleMsg>("/service_topic_no_request",
+            [](const std::shared_ptr<const rf::msgs::ExampleMsg> reply, const bool result) {
+            elog::info("[no_request]request success. result: {}, response: {}", result, reply->ShortDebugString());
             return;
         });
 

@@ -14,7 +14,7 @@ int main(int argc, char** argv)
     for (int i = 0; i < kSubNodeNum; ++ i) {
         nodes[i] = std::make_unique<Node>();
         nodes[i]->subscribe<rf::msgs::ExampleMsg>("/test_topic", [i](const std::shared_ptr<const rf::msgs::ExampleMsg> msg) {
-            elog::info("sub[{}], recv msg: {}", i, msg->DebugString());
+            elog::info("sub[{}], recv msg: {}", i, msg->ShortDebugString());
         });
     }
 

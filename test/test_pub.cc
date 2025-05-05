@@ -13,7 +13,7 @@ int main(int argc, char** argv)
     // create a local subscriber
     auto sub_node = Node();
     sub_node.subscribe<rf::msgs::ExampleMsg>("/test_topic", [](const std::shared_ptr<const rf::msgs::ExampleMsg> msg) {
-        elog::info("recv msg: {}", msg->DebugString());
+        elog::info("recv msg: {}", msg->ShortDebugString());
     });
 
     while (true) {

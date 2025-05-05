@@ -159,7 +159,7 @@ bool Node::advertise(const std::string& topic, std::function<bool(const std::sha
     auto f = [callback] (const std::shared_ptr<const RequestT>& req, std::shared_ptr<rf::msgs::Empty>) {
         return callback(req);
     };
-    return advertise(topic, f, ops);
+    return advertise<RequestT, rf::msgs::Empty>(topic, f, ops);
 }
 
 // Advertise service without request
@@ -170,11 +170,11 @@ bool Node::advertise(const std::string& topic, std::function<bool(std::shared_pt
     auto f = [callback] (const std::shared_ptr<const rf::msgs::Empty>&, std::shared_ptr<ReplyT> rep) {
         return callback(rep);
     };
-    return advertise(topic, f, ops);
+    return advertise<rf::msgs::Empty, ReplyT>(topic, f, ops);
 }
 
 template<typename RequestT, typename ReplyT>
-bool Node::request(const std::string& topic, const std::shared_ptr<RequestT>& request,
+bool Node::request(const std::string& topic, const std::shared_ptr<RequestT>& req,
     std::function<void(const std::shared_ptr<const ReplyT>, const bool)> callback)
 {
     // First, find a local responser
@@ -185,7 +185,7 @@ bool Node::request(const std::string& topic, const std::shared_ptr<RequestT>& re
 
     auto msg_rep = std::make_shared<ReplyT>();
     if (local_responser_found) {
-        bool result = rep_handler->runLocalCallback(request, msg_rep);
+        bool result = rep_handler->runLocalCallback(req, msg_rep);
 
         callback(msg_rep, result);
         return true;
@@ -196,7 +196,7 @@ bool Node::request(const std::string& topic, const std::shared_ptr<RequestT>& re
         // No local responser, find remote one
         auto req_handler_ptr = std::make_shared<ReqHandler<RequestT, ReplyT>>(getNodeUuid());
 
-        req_handler_ptr->setMessage(request);
+        req_handler_ptr->setMessage(req);
         req_handler_ptr->setCallback(callback);
 
         getNodeShared().request_handlers_.addHandler(topic, getNodeUuid(), req_handler_ptr);
@@ -209,7 +209,7 @@ bool Node::request(const std::string& topic, const std::shared_ptr<RequestT>& re
 }
 
 template<typename RequestT, typename ReplyT>
-bool Node::request(const std::string& topic, const std::shared_ptr<RequestT>& request,
+bool Node::request(const std::string& topic, const std::shared_ptr<RequestT>& req,
     const unsigned int timeout_ms, std::shared_ptr<ReplyT> reply, bool& result)
 {
     // First, find a local responser
@@ -220,12 +220,12 @@ bool Node::request(const std::string& topic, const std::shared_ptr<RequestT>& re
 
     auto msg_rep = std::make_shared<ReplyT>();
     if (local_responser_found) {
-        result = rep_handler->runLocalCallback(request, msg_rep);
+        result = rep_handler->runLocalCallback(req, msg_rep);
         return true;
     }
 
     auto req_handler_ptr = std::make_shared<ReqHandler<RequestT, ReplyT>>(getNodeUuid());
-    req_handler_ptr->setMessage(request);
+    req_handler_ptr->setMessage(req);
 
     AddressMap<ServicePublisherInfo> remote_publishers;
     if (getNodeShared().getServicePublishers(topic, remote_publishers)) {
@@ -259,22 +259,22 @@ bool Node::request(const std::string& topic, const std::shared_ptr<RequestT>& re
 }
 
 template<typename RequestT>
-bool Node::request(const std::string& topic, const std::shared_ptr<RequestT>& request,
+bool Node::request(const std::string& topic, const std::shared_ptr<RequestT>& req,
     std::function<void(const bool)> callback)
 {
     auto f = [callback] (const std::shared_ptr<const rf::msgs::Empty>&, const bool result) {
         callback(result);
     };
 
-    return request(topic, request, f);
+    return request<RequestT, rf::msgs::Empty>(topic, req, f);
 }
 
 template<typename RequestT>
-bool Node::request(const std::string& topic, const std::shared_ptr<RequestT>& request,
+bool Node::request(const std::string& topic, const std::shared_ptr<RequestT>& req,
     const unsigned int timeout, bool& result)
 {
     auto rep = std::make_shared<rf::msgs::Empty>();
-    return request(topic, request, timeout, rep, result);
+    return request<RequestT, rf::msgs::Empty>(topic, req, timeout, rep, result);
 }
 
 template<typename ReplyT>
@@ -282,7 +282,7 @@ bool Node::request(const std::string& topic,
     std::function<void(const std::shared_ptr<const ReplyT>, const bool)> callback)
 {
     auto req = std::make_shared<rf::msgs::Empty>();
-    return request(topic, req, callback);
+    return request<rf::msgs::Empty, ReplyT>(topic, req, callback);
 }
 
 template<typename ReplyT>
@@ -290,7 +290,7 @@ bool Node::request(const std::string& topic, const unsigned int timeout,
     std::shared_ptr<ReplyT> reply, bool& result)
 {
     auto req = std::make_shared<rf::msgs::Empty>();
-    return request(topic, req, timeout, reply, result);
+    return request<rf::msgs::Empty, ReplyT>(topic, req, timeout, reply, result);
 }
 
 } // namespace trans
