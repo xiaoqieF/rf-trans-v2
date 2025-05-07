@@ -46,3 +46,10 @@ target_link_libraries(rf-trans PRIVATE
 )
 
 add_subdirectory(test)
+
+option(BUILD_TESTING "Enable tests" ON)
+
+if(BUILD_TESTING)
+    enable_testing()
+    add_subdirectory(test/ut)
+endif()
