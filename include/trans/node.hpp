@@ -71,6 +71,8 @@ public:
     bool request(const std::string& topic, const unsigned int timeout_ms,
         std::shared_ptr<ReplyT> reply, bool& result);
 
+    bool waitForService(const std::string& topic, std::chrono::duration<int64_t, std::nano> timeout);
+
     bool unadvertiseService(const std::string& topic);
 
     std::set<std::string> getAdvertisedTopics();
@@ -135,6 +137,11 @@ bool Node::advertise(const std::string& topic,
 {
     auto rep_handler_ptr = std::make_shared<RepHandler<RequestT, ReplyT>>();
     rep_handler_ptr->setCallback(callback);
+
+    if (servicesAdvertised().count(topic)) {
+        elog::error("Node::advertise(): topic[{}] has already advertised by this node.");
+        return false;
+    }
 
     servicesAdvertised().insert(topic);
 

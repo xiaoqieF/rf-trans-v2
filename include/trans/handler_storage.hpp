@@ -26,6 +26,7 @@ public:
     HandlerStorage() = default;
     virtual ~HandlerStorage() = default;
 
+    bool hasTopic(const std::string& topic) const;
     bool getHandlers(const std::string& topic, NodeHandlerMap& handlers) const;
     // Get the first handler for a topic that matches a specific pair
     // of request/response types.
@@ -54,6 +55,13 @@ private:
     mutable std::mutex mutex_;
     TopicHandlerMap data_;
 };
+
+template<typename T>
+bool HandlerStorage<T>::hasTopic(const std::string& topic) const
+{
+    std::lock_guard lk(mutex_);
+    return data_.find(topic) != data_.end();
+}
 
 template<typename T>
 void HandlerStorage<T>::addHandler(const std::string& topic, const std::string& node_uuid, const std::shared_ptr<T>& handler)

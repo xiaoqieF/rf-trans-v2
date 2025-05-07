@@ -68,6 +68,28 @@ bool Node::unadvertiseService(const std::string& topic)
     return true;
 }
 
+bool Node::waitForService(const std::string& topic, std::chrono::duration<int64_t, std::nano> timeout)
+{
+    using namespace std::chrono_literals;
+    auto begin = std::chrono::steady_clock::now();
+
+    AddressMap<ServicePublisherInfo> remote_publishers;
+    while (true) {
+        bool has_server =
+            getNodeShared().response_handlers_.hasTopic(topic) ||
+            getNodeShared().getServicePublishers(topic, remote_publishers);
+        if (has_server) {
+            return true;
+        }
+        std::this_thread::sleep_for(20ms);
+        auto now = std::chrono::steady_clock::now();
+        if (now - begin > timeout) {
+            break;
+        }
+    }
+    return false;
+}
+
 /// TODO: move this function to node_shared
 bool Node::unsubscribe(const std::string& topic)
 {
