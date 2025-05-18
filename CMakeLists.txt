@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.22)
 
 project(rf-trans)
 
-add_compile_options(-std=c++17 -Wall -Wextra -Wno-unused-parameter -Wno-unused-variable -g)
+add_compile_options(-std=c++17 -Wall -Wextra -Wno-unused-parameter -Wno-unused-variable -O2)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 

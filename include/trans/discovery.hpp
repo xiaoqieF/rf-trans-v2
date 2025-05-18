@@ -553,8 +553,7 @@ void Discovery<Pub>::loop()
 template<typename Pub>
 void Discovery<Pub>::recvDiscoveryMsg()
 {
-    // todo: could we cut down kMaxRcvStr
-    char recv_buf[kMaxRcvStr];
+    static char recv_buf[kMaxRcvStr];
     sockaddr_in client_addr;
     socklen_t addr_len = sizeof(client_addr);
 
@@ -944,7 +943,6 @@ bool Discovery<Pub>::registerNetIface(const std::string& ip)
     // Join the multicast group. We have to do it for each network interface
     // but we can do it on the same socket. We will use the socket at
     // position 0 for receiving multicast information.
-    /// TODO: Do not receive msgs of different interface at the same socket.
     struct ip_mreq group;
     group.imr_multiaddr.s_addr = inet_addr(multicast_group_.c_str());
     group.imr_interface.s_addr = inet_addr(ip.c_str());

@@ -128,13 +128,13 @@ void ReqHandler<Req, Rep>::notifyResult(const std::string& rep, const bool resul
 template<typename Req, typename Rep>
 std::string ReqHandler<Req, Rep>::getReqTypeName() const
 {
-    return Req{}.GetTypeName();
+    return Req::descriptor()->full_name();
 }
 
 template<typename Req, typename Rep>
 std::string ReqHandler<Req, Rep>::getRepTypeName() const
 {
-    return Rep{}.GetTypeName();
+    return Rep::descriptor()->full_name();
 }
 
 

@@ -44,8 +44,7 @@ public:
 
     void setCallback(const MsgCallback<T>& cb) { cb_ = cb; }
 
-    // todo: can i get type name when compile time
-    std::string getMsgType() override { return T{}.GetTypeName(); }
+    std::string getMsgType() override { return T::descriptor()->full_name(); }
 
     bool runLocalCallback(const ProtoMsgConstPtr& msg, const MessageInfo& info) override;
     const ProtoMsgPtr createMsg(const void* data, size_t len, const std::string& type) const override;

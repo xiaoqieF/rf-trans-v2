@@ -98,15 +98,13 @@ bool RepHandler<Req, Rep>::runCallback(const std::string& req, std::string& rep)
 template<typename Req, typename Rep>
 std::string RepHandler<Req, Rep>::getReqTypeName() const
 {
-    /// todo: How can I get type name at compile time
-    return Req{}.GetTypeName();
+    return Req::descriptor()->full_name();
 }
 
 template<typename Req, typename Rep>
 std::string RepHandler<Req, Rep>::getRepTypeName() const
 {
-    /// todo: How can I get type name at compile time
-    return Rep{}.GetTypeName();
+    return Rep::descriptor()->full_name();
 }
 
 template<typename Req, typename Rep>

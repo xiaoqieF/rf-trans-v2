@@ -147,10 +147,9 @@ void NodeShared::onNewConnection(const MessagePublisherInfo& pub)
     std::string remote_proc_uuid = pub.getProcessUuid();
 
     elog::debug("Connection Callback");
-    /// TODO: Delete this debug print
-    std::stringstream ss;
-    ss << pub;
-    elog::debug(ss.str());
+    // std::stringstream ss;
+    // ss << pub;
+    // elog::debug(ss.str());
 
     std::lock_guard lock(pub_sub_mutex_);
     // Do not handle connection msg from the same process
