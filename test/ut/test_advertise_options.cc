@@ -12,6 +12,28 @@ TEST(advertise_options, construct)
     EXPECT_EQ(ops1.getScope(), rf::trans::Scope::ALL);
 }
 
+TEST(advertise_options, equality)
+{
+    rf::trans::AdvertiseMessageOptions ops1;
+    rf::trans::AdvertiseMessageOptions ops2;
+    EXPECT_TRUE(ops1 == ops2);
+    EXPECT_FALSE(ops1 != ops2);
+
+    ops1.setScope(rf::trans::Scope::HOST);
+    EXPECT_FALSE(ops1 == ops2);
+    EXPECT_TRUE(ops1 != ops2);
+    ops2.setScope(rf::trans::Scope::HOST);
+    EXPECT_TRUE(ops1 == ops2);
+    EXPECT_FALSE(ops1 != ops2);
+
+    ops1.setMsgsPerSec(10);
+    EXPECT_FALSE(ops1 == ops2);
+    EXPECT_TRUE(ops1 != ops2);
+    ops2.setMsgsPerSec(10);
+    EXPECT_TRUE(ops1 == ops2);
+    EXPECT_FALSE(ops1 != ops2);
+}
+
 int main(int argc, char** argv)
 {
     ::testing::InitGoogleTest(&argc, argv);
