@@ -95,8 +95,8 @@ private:
 
     std::string process_uuid_;
     std::string host_addr_;
-    std::vector<std::string> host_ingerfaces_;
-    std::vector<int> sockets_;
+    std::vector<std::string> local_interface_addresses_;
+    std::vector<int> multicast_sockets_;
     std::atomic<unsigned int> silence_interval_{kDefSilenceInterval};
     std::atomic<unsigned int> activity_interval_{kDefActivityInterval};
     std::atomic<unsigned int> heartbeat_interval_{kDefHeartbeatInterval};
@@ -107,11 +107,11 @@ private:
     DiscoveryCallback<Pub> unregistration_cb_{nullptr};
     std::function<void()> subscribers_cb_{nullptr};
 
-    TopicStorage<Pub> info_;
+    TopicStorage<Pub> known_publishers_;
     TopicStorage<Pub> remote_subscribers_;
 
     // process_uuid --> recent active timestamp
-    std::map<std::string, Timestamp> activity_;
+    std::map<std::string, Timestamp> last_seen_by_process_;
     Timestamp time_next_heartbeat_;
     Timestamp time_next_activity_;
     unsigned int heartbeat_count_{0};
@@ -161,12 +161,12 @@ Discovery<Pub>::Discovery(const std::string& process_uuid,
 {
     std::string host_ip;
     if (getEnv("RF_HOST_IP", host_ip) && !host_ip.empty()) {
-        host_ingerfaces_ = {host_ip};
+        local_interface_addresses_ = {host_ip};
     } else {
-        host_ingerfaces_ = determineInterfaces();
+        local_interface_addresses_ = determineInterfaces();
     }
 
-    for (const auto& net_iface : host_ingerfaces_) {
+    for (const auto& net_iface : local_interface_addresses_) {
         auto succeed = registerNetIface(net_iface);
         if (!succeed && net_iface == host_addr_) {
             registerNetIface("127.0.0.1");
@@ -177,14 +177,14 @@ Discovery<Pub>::Discovery(const std::string& process_uuid,
 
     // Reuse addr and reuse port
     int reuse_addr = 1;
-    if (setsockopt(sockets_.at(0), SOL_SOCKET, SO_REUSEADDR,
+    if (setsockopt(multicast_sockets_.at(0), SOL_SOCKET, SO_REUSEADDR,
         reinterpret_cast<const char*>(&reuse_addr), sizeof(reuse_addr)) != 0) {
         elog::error("Error setting socket option (SO_REUSEADDR).");
         return;
     }
 
     int reuse_port = 1;
-    if (setsockopt(sockets_.at(0), SOL_SOCKET, SO_REUSEPORT,
+    if (setsockopt(multicast_sockets_.at(0), SOL_SOCKET, SO_REUSEPORT,
         reinterpret_cast<const char*>(&reuse_port), sizeof(reuse_port)) != 0) {
         elog::error("Error setting socket option (SO_REUSEPORT).");
         return;
@@ -197,7 +197,7 @@ Discovery<Pub>::Discovery(const std::string& process_uuid,
     local_addr.sin_addr.s_addr = htonl(INADDR_ANY);
     local_addr.sin_port = htons(static_cast<ushort>(port_));
 
-    if (bind(sockets_.at(0), reinterpret_cast<sockaddr*>(&local_addr), sizeof(sockaddr_in)) < 0) {
+    if (bind(multicast_sockets_.at(0), reinterpret_cast<sockaddr*>(&local_addr), sizeof(sockaddr_in)) < 0) {
         elog::error("Bind to a local port[{}] failed.", port_);
         return;
     }
@@ -221,7 +221,7 @@ Discovery<Pub>::~Discovery()
 
     sendMsg(msgs::Discovery::BYE, PublisherInfo("", "", process_uuid_, "", AdvertiseOptions{}));
 
-    for (const auto sock : sockets_) {
+    for (const auto sock : multicast_sockets_) {
         close(sock);
     }
 }
@@ -245,7 +245,7 @@ bool Discovery<Pub>::advertise(const Pub& publisher)
 
     {
         std::lock_guard lock(mutex_);
-        if (!info_.addPublisher(publisher)) {
+        if (!known_publishers_.addPublisher(publisher)) {
             return false;
         }
         conn_cb = connection_cb_;
@@ -271,11 +271,11 @@ bool Discovery<Pub>::unadvertise(const std::string& topic, const std::string& no
     Pub publisher;
     {
         std::lock_guard lock(mutex_);
-        if (!info_.getPublisher(topic, process_uuid_, node_uuid, publisher)) {
+        if (!known_publishers_.getPublisher(topic, process_uuid_, node_uuid, publisher)) {
             return true;
         }
 
-        info_.delPublishersByNode(topic, process_uuid_, node_uuid);
+        known_publishers_.delPublishersByNode(topic, process_uuid_, node_uuid);
     }
 
     if (publisher.getOptions().getScope() != Scope::PROCESS) {
@@ -308,7 +308,7 @@ bool Discovery<Pub>::discover(const std::string& topic) const
     bool found = false;
     {
         std::lock_guard lock(mutex_);
-        found = info_.getPublishers(topic, addresses);
+        found = known_publishers_.getPublishers(topic, addresses);
     }
 
     if (found) {
@@ -346,13 +346,13 @@ void Discovery<Pub>::unRegisterNode(const MessagePublisherInfo& pub) const
 template<typename Pub>
 const TopicStorage<Pub>& Discovery<Pub>::getInfo() const
 {
-    return info_;
+    return known_publishers_;
 }
 
 template<typename Pub>
 bool Discovery<Pub>::getPublishers(const std::string& topic, AddressMap<Pub>& publishers) const
 {
-    return info_.getPublishers(topic, publishers);
+    return known_publishers_.getPublishers(topic, publishers);
 }
 
 template<typename Pub>
@@ -370,7 +370,7 @@ void Discovery<Pub>::getTopicList(std::vector<std::string>& topics)
     waitForInit();
 
     std::lock_guard lock(mutex_);
-    topics = info_.getTopicList();
+    topics = known_publishers_.getTopicList();
 
     /// ??? whis shoud not work
     std::vector<std::string> remote_subs = remote_subscribers_.getTopicList();
@@ -478,17 +478,17 @@ void Discovery<Pub>::printCurrentState() const
     ss << "\tSilence: " << silence_interval_
               << " ms." << std::endl;
     ss << "Known information:" << std::endl;
-    info_.print(ss);
+    known_publishers_.print(ss);
 
     // Used to calculate the elapsed time.
     Timestamp now = std::chrono::steady_clock::now();
 
     ss << "Activity" << std::endl;
-    if (activity_.empty())
+    if (last_seen_by_process_.empty())
       ss << "\t<empty>" << std::endl;
     else
     {
-      for (auto &proc : activity_)
+      for (auto &proc : last_seen_by_process_)
       {
         // Elapsed time since the last update from this publisher.
         std::chrono::duration<double> elapsed = now - proc.second;
@@ -521,7 +521,7 @@ void Discovery<Pub>::loop()
     while (!exit_) {
         int timeout = nextTimeout();
 
-        if (details::pollSockets(sockets_, timeout)) {
+        if (details::pollSockets(multicast_sockets_, timeout)) {
             recvDiscoveryMsg();
             // printCurrentState();
         }
@@ -538,7 +538,7 @@ void Discovery<Pub>::recvDiscoveryMsg()
     sockaddr_in client_addr;
     socklen_t addr_len = sizeof(client_addr);
 
-    int received = recvfrom(sockets_.at(0), recv_buf, sizeof(recv_buf), 0,
+    int received = recvfrom(multicast_sockets_.at(0), recv_buf, sizeof(recv_buf), 0,
         reinterpret_cast<sockaddr*>(&client_addr), &addr_len);
 
     if (received > 0) {
@@ -576,8 +576,8 @@ void Discovery<Pub>::dispatchDiscoveryMsg(const std::string& from_ip, char* msg,
         return;
     }
 
-    bool is_sender_local = (std::find(host_ingerfaces_.begin(),
-        host_ingerfaces_.end(), from_ip) != host_ingerfaces_.end()) ||
+    bool is_sender_local = (std::find(local_interface_addresses_.begin(),
+        local_interface_addresses_.end(), from_ip) != local_interface_addresses_.end()) ||
         (from_ip.find("127.") == 0);
 
     DiscoveryCallback<Pub> connect_cb;
@@ -588,7 +588,7 @@ void Discovery<Pub>::dispatchDiscoveryMsg(const std::string& from_ip, char* msg,
 
     {
         std::lock_guard lock(mutex_);
-        activity_[recv_process_uuid] = std::chrono::steady_clock::now();
+        last_seen_by_process_[recv_process_uuid] = std::chrono::steady_clock::now();
 
         connect_cb = connection_cb_;
         disconnect_cb = disconnection_cb_;
@@ -615,7 +615,7 @@ void Discovery<Pub>::dispatchDiscoveryMsg(const std::string& from_ip, char* msg,
             bool added;
             {
                 std::lock_guard lock(mutex_);
-                added = info_.addPublisher(publisher);
+                added = known_publishers_.addPublisher(publisher);
             }
             if (added && connect_cb) {
                 connect_cb(publisher);
@@ -634,7 +634,7 @@ void Discovery<Pub>::dispatchDiscoveryMsg(const std::string& from_ip, char* msg,
 
             {
                 std::lock_guard lock(mutex_);
-                info_.delPublishersByNode(publisher.getTopic(),
+                known_publishers_.delPublishersByNode(publisher.getTopic(),
                     publisher.getProcessUuid(), publisher.getNodeUuid());
             }
             if (disconnect_cb) {
@@ -654,11 +654,11 @@ void Discovery<Pub>::dispatchDiscoveryMsg(const std::string& from_ip, char* msg,
             AddressMap<Pub> addresses;
             {
                 std::lock_guard lock(mutex_);
-                if (!info_.hasAnyPublishers(recv_topic, process_uuid_)) {
+                if (!known_publishers_.hasAnyPublishers(recv_topic, process_uuid_)) {
                     break;
                 }
 
-                if (!info_.getPublishers(recv_topic, addresses)) {
+                if (!known_publishers_.getPublishers(recv_topic, addresses)) {
                     break;
                 }
             }
@@ -720,8 +720,8 @@ void Discovery<Pub>::dispatchDiscoveryMsg(const std::string& from_ip, char* msg,
         {
             {
                 std::lock_guard lock(mutex_);
-                activity_.erase(recv_process_uuid);
-                info_.delPublishersByProc(recv_process_uuid);
+                last_seen_by_process_.erase(recv_process_uuid);
+                known_publishers_.delPublishersByProc(recv_process_uuid);
             }
 
             if (disconnect_cb) {
@@ -752,7 +752,7 @@ void Discovery<Pub>::updateHeartbeat()
     std::map<std::string, std::vector<Pub>> nodes;
     {
         std::lock_guard lock(mutex_);
-        info_.getPublishersByProc(process_uuid_,nodes);
+        known_publishers_.getPublishersByProc(process_uuid_,nodes);
     }
 
     for (const auto& topic : nodes) {
@@ -789,13 +789,13 @@ void Discovery<Pub>::updateActivity()
         std::lock_guard lock(mutex_);
         disconnect_cb = disconnection_cb_;
 
-        for (auto it = activity_.begin(); it != activity_.end();) {
+        for (auto it = last_seen_by_process_.begin(); it != last_seen_by_process_.end();) {
             auto elapsed = now - it->second;
             // This publisher has expired
             if (std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count() > silence_interval_.load()) {
-                info_.delPublishersByProc(it->first);
+                known_publishers_.delPublishersByProc(it->first);
                 expired_process_uuids.push_back(it->first);
-                activity_.erase(it ++);
+                last_seen_by_process_.erase(it ++);
             } else {
                 ++ it;
             }
@@ -867,7 +867,7 @@ void Discovery<Pub>::sendMulticast(const msgs::Discovery& msg) const
     memcpy(send_buf.get(), &msg_size, sizeof(msg_size));
 
     if (msg.SerializeToArray(send_buf.get() + sizeof(msg_size), msg_size)) {
-        for (auto sock : sockets_) {
+        for (auto sock : multicast_sockets_) {
             errno = 0;
             if (sendto(sock, send_buf.get(), total_size, 0,
                 reinterpret_cast<const sockaddr*>(&multicast_addr_), sizeof(multicast_addr_)) != total_size) {
@@ -917,7 +917,7 @@ bool Discovery<Pub>::registerNetIface(const std::string& ip)
         return false;
     }
 
-    sockets_.push_back(sock);
+    multicast_sockets_.push_back(sock);
 
     // Join the multicast group. We have to do it for each network interface
     // but we can do it on the same socket. We will use the socket at
@@ -925,7 +925,7 @@ bool Discovery<Pub>::registerNetIface(const std::string& ip)
     struct ip_mreq group;
     group.imr_multiaddr.s_addr = inet_addr(multicast_group_.c_str());
     group.imr_interface.s_addr = inet_addr(ip.c_str());
-    if (setsockopt(sockets_.at(0), IPPROTO_IP, IP_ADD_MEMBERSHIP,
+    if (setsockopt(multicast_sockets_.at(0), IPPROTO_IP, IP_ADD_MEMBERSHIP,
         reinterpret_cast<const char*>(&group), sizeof(group)) != 0) {
         elog::error("Error setting socket option (IP_ADD_MEMBERSHIP): {}", strerror(errno));
         return false;
