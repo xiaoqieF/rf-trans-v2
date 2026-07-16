@@ -24,7 +24,7 @@ bool PublisherInfo::operator==(const PublisherInfo& rhs) const
            opts_ == rhs.opts_;
 }
 
-std::ostream& operator==(std::ostream& out, const PublisherInfo& msg)
+std::ostream& operator<<(std::ostream& out, const PublisherInfo& msg)
 {
     out << "Publisher:\n"
         << "\tTopic: [" << msg.topic_ << "]\n"

@@ -38,7 +38,7 @@ public:
 
     bool operator==(const PublisherInfo& rhs) const;
     bool operator!=(const PublisherInfo& rhs) const { return !(*this == rhs); }
-    friend std::ostream& operator==(std::ostream& out, const PublisherInfo& msg);
+    friend std::ostream& operator<<(std::ostream& out, const PublisherInfo& msg);
 
     virtual void fillDiscovery(msgs::Discovery& msg) const;
     virtual void setFromDiscovery(const msgs::Discovery& msg);

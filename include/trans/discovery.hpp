@@ -46,7 +46,6 @@ public:
 
     const TopicStorage<Pub>& getInfo() const;
     bool getPublishers(const std::string& topic, AddressMap<Pub>& publishers) const;
-    bool getRemoteSubscribers(const std::string& topic, AddressMap<Pub>& subscribers) const;
 
     // How do this func work ?
     void getTopicList(std::vector<std::string>& topics);
@@ -83,7 +82,7 @@ private:
 
 private:
     // ms
-    static constexpr unsigned int kDefActivityInterval = 100;
+    static constexpr unsigned int kDefActivityInterval = 200;
     static constexpr unsigned int kDefHeartbeatInterval = 1000;
     static constexpr unsigned int kDefSilenceInterval = 3000;
     static constexpr int kTimeout = 250;
@@ -98,9 +97,9 @@ private:
     std::string host_addr_;
     std::vector<std::string> host_ingerfaces_;
     std::vector<int> sockets_;
-    unsigned int silence_interval_;
-    unsigned int activity_interval_;
-    unsigned int heartbeat_interval_;
+    std::atomic<unsigned int> silence_interval_{kDefSilenceInterval};
+    std::atomic<unsigned int> activity_interval_{kDefActivityInterval};
+    std::atomic<unsigned int> heartbeat_interval_{kDefHeartbeatInterval};
 
     DiscoveryCallback<Pub> connection_cb_{nullptr};
     DiscoveryCallback<Pub> disconnection_cb_{nullptr};
@@ -121,9 +120,10 @@ private:
     std::thread discover_loop_thread_;
 
     std::atomic<bool> enabled_{false};
-    std::atomic<bool> initialized_{false};
     std::atomic<bool> exit_{false};
 
+    std::mutex initialize_mutex_;
+    bool initialized_{false};
     std::condition_variable initialize_cv_;
 };
 
@@ -157,10 +157,7 @@ Discovery<Pub>::Discovery(const std::string& process_uuid,
     : multicast_group_(ip),
       port_(port),
       process_uuid_(process_uuid),
-      host_addr_(determineHost()),
-      silence_interval_(kDefSilenceInterval),
-      activity_interval_(kDefActivityInterval),
-      heartbeat_interval_(kDefHeartbeatInterval)
+      host_addr_(determineHost())
 {
     std::string host_ip;
     if (getEnv("RF_HOST_IP", host_ip) && !host_ip.empty()) {
@@ -217,6 +214,7 @@ template<typename Pub>
 Discovery<Pub>::~Discovery()
 {
     exit_ = true;
+    initialize_cv_.notify_all();
     if (discover_loop_thread_.joinable()) {
         discover_loop_thread_.join();
     }
@@ -231,10 +229,8 @@ Discovery<Pub>::~Discovery()
 template<typename Pub>
 void Discovery<Pub>::waitForInit()
 {
-    std::unique_lock lock(mutex_);
-    if (!initialized_) {
-        initialize_cv_.wait(lock, [this] { return initialized_.load(); });
-    }
+    std::unique_lock lock(initialize_mutex_);
+    initialize_cv_.wait(lock, [this] { return initialized_ || exit_.load(); });
 }
 
 
@@ -350,22 +346,13 @@ void Discovery<Pub>::unRegisterNode(const MessagePublisherInfo& pub) const
 template<typename Pub>
 const TopicStorage<Pub>& Discovery<Pub>::getInfo() const
 {
-    std::lock_guard lock(mutex_);
     return info_;
 }
 
 template<typename Pub>
 bool Discovery<Pub>::getPublishers(const std::string& topic, AddressMap<Pub>& publishers) const
 {
-    std::lock_guard lock(mutex_);
     return info_.getPublishers(topic, publishers);
-}
-
-template<typename Pub>
-bool Discovery<Pub>::getRemoteSubscribers(const std::string& topic, AddressMap<Pub>& subscribers) const
-{
-    std::lock_guard lock(mutex_);
-    return remote_subscribers_;
 }
 
 template<typename Pub>
@@ -404,43 +391,37 @@ std::string Discovery<Pub>::getHostAddr() const
 template<typename Pub>
 unsigned int Discovery<Pub>::getActivityInterval() const
 {
-    std::lock_guard lock(mutex_);
-    return activity_interval_;
+    return activity_interval_.load();
 }
 
 template<typename Pub>
 void Discovery<Pub>::setActivityInterval(const unsigned int ms)
 {
-    std::lock_guard lock(mutex_);
-    activity_interval_ = ms;
+    activity_interval_.store(ms);
 }
 
 template<typename Pub>
 unsigned int Discovery<Pub>::getHeartbeatInterval() const
 {
-    std::lock_guard lock(mutex_);
-    return heartbeat_interval_;
+    return heartbeat_interval_.load();
 }
 
 template<typename Pub>
 void Discovery<Pub>::setHeartbeatInterval(const unsigned int ms)
 {
-    std::lock_guard lock(mutex_);
-    heartbeat_interval_ = ms;
+    heartbeat_interval_.store(ms);
 }
 
 template<typename Pub>
 unsigned int Discovery<Pub>::getSilenceInterval() const
 {
-    std::lock_guard lock(mutex_);
-    return silence_interval_;
+    return silence_interval_.load();
 }
 
 template<typename Pub>
 void Discovery<Pub>::setSilenceInterval(const unsigned int ms)
 {
-    std::lock_guard lock(mutex_);
-    silence_interval_ = ms;
+    silence_interval_.store(ms);
 }
 
 template<typename Pub>
@@ -651,14 +632,13 @@ void Discovery<Pub>::dispatchDiscoveryMsg(const std::string& from_ip, char* msg,
                 return;
             }
 
-            if (disconnect_cb) {
-                disconnect_cb(publisher);
-            }
-
             {
                 std::lock_guard lock(mutex_);
                 info_.delPublishersByNode(publisher.getTopic(),
                     publisher.getProcessUuid(), publisher.getNodeUuid());
+            }
+            if (disconnect_cb) {
+                disconnect_cb(publisher);
             }
             break;
         }
@@ -741,17 +721,13 @@ void Discovery<Pub>::dispatchDiscoveryMsg(const std::string& from_ip, char* msg,
             {
                 std::lock_guard lock(mutex_);
                 activity_.erase(recv_process_uuid);
+                info_.delPublishersByProc(recv_process_uuid);
             }
 
             if (disconnect_cb) {
                 Pub pub;
                 pub.setProcessUuid(recv_process_uuid);
                 disconnect_cb(pub);
-            }
-
-            {
-                std::lock_guard lock(mutex_);
-                info_.delPublishersByProc(recv_process_uuid);
             }
             break;
         }
@@ -785,15 +761,17 @@ void Discovery<Pub>::updateHeartbeat()
         }
     }
 
-    if (!initialized_) {
-        if (heartbeat_count_ == 2u) {
+    if (heartbeat_count_ == 2u) {
+        {
+            std::lock_guard lock(initialize_mutex_);
             initialized_ = true;
         }
         initialize_cv_.notify_all();
     }
     ++ heartbeat_count_;
 
-    time_next_heartbeat_ = std::chrono::steady_clock::now() + std::chrono::milliseconds(heartbeat_interval_);
+    time_next_heartbeat_ = std::chrono::steady_clock::now() +
+        std::chrono::milliseconds(heartbeat_interval_.load());
 }
 
 template<typename Pub>
@@ -814,7 +792,7 @@ void Discovery<Pub>::updateActivity()
         for (auto it = activity_.begin(); it != activity_.end();) {
             auto elapsed = now - it->second;
             // This publisher has expired
-            if (std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count() > silence_interval_) {
+            if (std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count() > silence_interval_.load()) {
                 info_.delPublishersByProc(it->first);
                 expired_process_uuids.push_back(it->first);
                 activity_.erase(it ++);
@@ -824,7 +802,8 @@ void Discovery<Pub>::updateActivity()
         }
     }
 
-    time_next_activity_ = std::chrono::steady_clock::now() + std::chrono::milliseconds(activity_interval_);
+    time_next_activity_ = std::chrono::steady_clock::now() +
+        std::chrono::milliseconds(activity_interval_.load());
 
     if (!disconnect_cb) {
         return;
@@ -909,7 +888,7 @@ int Discovery<Pub>::nextTimeout() const
 {
     auto now = std::chrono::steady_clock::now();
     auto time_until_next_heartbeat = time_next_heartbeat_ - now;
-    auto time_until_next_activity = time_next_heartbeat_ - now;
+    auto time_until_next_activity = time_next_activity_ - now;
 
     int t = static_cast<int>(std::chrono::duration_cast<std::chrono::milliseconds>(
         std::min(time_until_next_activity, time_until_next_heartbeat)
