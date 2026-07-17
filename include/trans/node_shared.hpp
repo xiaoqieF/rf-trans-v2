@@ -52,7 +52,7 @@ private:
     void recvSrvResponse();
 
     void onNewConnection(const MessagePublisherInfo& pub);
-    void onNewDisConnection(const MessagePublisherInfo& pub);
+    void onNewDisconnection(const MessagePublisherInfo& pub);
     void onNewSrvConnection(const ServicePublisherInfo& pub);
     void onNewSrvDisconnection(const ServicePublisherInfo& pub);
     void onNewRegistration(const MessagePublisherInfo& pub);

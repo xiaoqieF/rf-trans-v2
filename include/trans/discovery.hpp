@@ -40,7 +40,7 @@ public:
     bool advertise(const Pub& publisher);
     bool unadvertise(const std::string& topic, const std::string& node_uuid);
 
-    // Try to discover [topic] immediately, whic send a SUBSCRIBE msg about topic
+    // Try to discover [topic] immediately, which sends a SUBSCRIBE message about the topic.
     bool discover(const std::string& topic) const;
     void registerNode(const MessagePublisherInfo& pub) const;
     void unRegisterNode(const MessagePublisherInfo& pub) const;
@@ -59,8 +59,13 @@ public:
 
     void setConnectionCb(const DiscoveryCallback<Pub>& cb);
     void setDisconnectionCb(const DiscoveryCallback<Pub>& cb);
-    void setRegisterationCb(const DiscoveryCallback<Pub>& cb);
-    void setUnregisterationCb(const DiscoveryCallback<Pub>& cb);
+    void setRegistrationCb(const DiscoveryCallback<Pub>& cb);
+    void setUnregistrationCb(const DiscoveryCallback<Pub>& cb);
+
+    [[deprecated("Use setRegistrationCb instead.")]]
+    void setRegisterationCb(const DiscoveryCallback<Pub>& cb) { setRegistrationCb(cb); }
+    [[deprecated("Use setUnregistrationCb instead.")]]
+    void setUnregisterationCb(const DiscoveryCallback<Pub>& cb) { setUnregistrationCb(cb); }
 
     void printCurrentState() const;
 
@@ -414,14 +419,14 @@ void Discovery<Pub>::setDisconnectionCb(const DiscoveryCallback<Pub>& cb)
 }
 
 template<typename Pub>
-void Discovery<Pub>::setRegisterationCb(const DiscoveryCallback<Pub>& cb)
+void Discovery<Pub>::setRegistrationCb(const DiscoveryCallback<Pub>& cb)
 {
     std::lock_guard lock(mutex_);
     registration_cb_ = cb;
 }
 
 template<typename Pub>
-void Discovery<Pub>::setUnregisterationCb(const DiscoveryCallback<Pub>& cb)
+void Discovery<Pub>::setUnregistrationCb(const DiscoveryCallback<Pub>& cb)
 {
     std::lock_guard lock(mutex_);
     unregistration_cb_ = cb;
@@ -494,7 +499,7 @@ void Discovery<Pub>::loop()
 
         if (details::pollSockets(multicast_sockets_, timeout)) {
             recvDiscoveryMsg();
-            printCurrentState();
+            // printCurrentState();
         }
 
         updateHeartbeat();
@@ -620,6 +625,7 @@ void Discovery<Pub>::dispatchDiscoveryMsg(const std::string& from_ip, char* msg,
                 elog::error("Subscription discovery message is missing Subscriber info.");
                 break;
             }
+            // If our process has any publishers for this topic, send an ADVERTISE message back to the subscriber.
             AddressMap<Pub> addresses;
             {
                 std::lock_guard lock(mutex_);

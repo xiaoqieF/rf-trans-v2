@@ -13,11 +13,13 @@ NodeShared& NodeShared::getInstance()
 
 NodeShared::~NodeShared()
 {
-    elog::info("NodeShared destructed.");
+    elog::info("NodeShared destroyed.");
     exit_ = true;
 
     local_pub_cv_.notify_all();
-    local_pub_thread_.join();
+    if (local_pub_thread_.joinable()) {
+        local_pub_thread_.join();
+    }
 
     if (receive_msg_thread_.joinable()) {
         receive_msg_thread_.join();
@@ -71,14 +73,14 @@ NodeShared::NodeShared()
     });
 
     msg_discovery_->setDisconnectionCb([this] (const MessagePublisherInfo& pub) {
-        this->onNewDisConnection(pub);
+        this->onNewDisconnection(pub);
     });
 
-    msg_discovery_->setRegisterationCb([this] (const MessagePublisherInfo& pub) {
+    msg_discovery_->setRegistrationCb([this] (const MessagePublisherInfo& pub) {
         this->onNewRegistration(pub);
     });
 
-    msg_discovery_->setUnregisterationCb([this] (const MessagePublisherInfo& pub) {
+    msg_discovery_->setUnregistrationCb([this] (const MessagePublisherInfo& pub) {
         this->onEndRegistration(pub);
     });
 
@@ -133,7 +135,7 @@ bool NodeShared::initializeSockets()
         requester_->set(zmq::sockopt::linger, linger_val);
         requester_->set(zmq::sockopt::router_mandatory, route_on);
     } catch (const zmq::error_t& e) {
-        elog::error("NodeShared::initializeSockets error: ", e.what());
+        elog::error("NodeShared::initializeSockets error: {}", e.what());
         return false;
     }
 
@@ -180,7 +182,7 @@ void NodeShared::onNewConnection(const MessagePublisherInfo& pub)
     }
 }
 
-void NodeShared::onNewDisConnection(const MessagePublisherInfo& pub)
+void NodeShared::onNewDisconnection(const MessagePublisherInfo& pub)
 {
     std::string topic = pub.getTopic();
     std::string remote_proc_uuid = pub.getProcessUuid();
@@ -189,10 +191,11 @@ void NodeShared::onNewDisConnection(const MessagePublisherInfo& pub)
     elog::debug("New disconnection detected, process_uuid: {}", remote_proc_uuid);
 
     std::lock_guard lock(pub_sub_mutex_);
-    remote_subscribers_.delPublishersByNode(topic, remote_proc_uuid, node_uuid);
-
-    MessagePublisherInfo conn;
-    if (!connections_.getPublisher(topic, remote_proc_uuid, node_uuid, conn)) {
+    // Discovery reports a process-level disconnect without a topic or node UUID.
+    // Registration teardown is handled exclusively by onEndRegistration().
+    if (topic.empty() && node_uuid.empty()) {
+        remote_subscribers_.delPublishersByProc(remote_proc_uuid);
+        connections_.delPublishersByProc(remote_proc_uuid);
         return;
     }
 
@@ -294,8 +297,8 @@ bool NodeShared::publish(const std::string& topic, char* data, const size_t data
 void NodeShared::sendPendingRemoteReqs(const std::string& topic,
     const std::string& req_type, const std::string& rep_type)
 {
-    std::string responser_addr;
-    std::string responser_id;
+    std::string responder_addr;
+    std::string responder_id;
 
     std::map<std::string, std::vector<ServicePublisherInfo>> addresses;
 
@@ -310,8 +313,8 @@ void NodeShared::sendPendingRemoteReqs(const std::string& topic,
         for (auto& pub : publishers) {
             if (pub.getReqTypeName() == req_type && pub.getRepTypeName() == rep_type) {
                 found = true;
-                responser_addr = pub.getAddr();
-                responser_id = pub.getSocketId();
+                responder_addr = pub.getAddr();
+                responder_id = pub.getSocketId();
                 break;
             }
         }
@@ -324,14 +327,14 @@ void NodeShared::sendPendingRemoteReqs(const std::string& topic,
         return;
     }
 
-    elog::debug("Found a service call responser at [{}], responser_id[{}]", responser_addr, responser_id);
+    elog::debug("Found a service call responder at [{}], responder_id[{}]", responder_addr, responder_id);
 
     std::lock_guard lock(service_mutex_);
-    if (std::find(service_connections_.begin(), service_connections_.end(), responser_addr) == service_connections_.end()) {
-        requester_->connect(responser_addr.c_str());
-        service_connections_.push_back(responser_addr);
+    if (std::find(service_connections_.begin(), service_connections_.end(), responder_addr) == service_connections_.end()) {
+        requester_->connect(responder_addr.c_str());
+        service_connections_.push_back(responder_addr);
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
-        elog::debug("Connected to [{}] for service requests.", responser_addr);
+        elog::debug("Connected to [{}] for service requests.", responder_addr);
     }
 
     std::map<std::string, std::map<std::string, IReqHandlerPtr>> req_handlers;
@@ -350,7 +353,6 @@ void NodeShared::sendPendingRemoteReqs(const std::string& topic,
                 continue;
             }
 
-            req_handler->setRequested(true);
             std::string data;
             if (!req_handler->serialize(data)) {
                 continue;
@@ -359,9 +361,9 @@ void NodeShared::sendPendingRemoteReqs(const std::string& topic,
             try {
                 zmq::message_t msg;
 
-                // Send responser id
-                msg.rebuild(responser_id.size());
-                memcpy(msg.data(), responser_id.data(), responser_id.size());
+                // Send responder id
+                msg.rebuild(responder_id.size());
+                memcpy(msg.data(), responder_id.data(), responder_id.size());
                 requester_->send(msg, zmq::send_flags::sndmore);
 
                 // Send topic
@@ -404,8 +406,10 @@ void NodeShared::sendPendingRemoteReqs(const std::string& topic,
                 memcpy(msg.data(), rep_type.data(), rep_type.size());
                 requester_->send(msg, zmq::send_flags::none);
 
+                req_handler->setRequested(true);
+
             } catch (const zmq::error_t& e) {
-                elog::error("NodeShared::sendPendingRequests request send failed: {}", e.what());
+                elog::error("NodeShared::sendPendingRemoteReqs request send failed: {}", e.what());
             }
         }
     }
@@ -447,7 +451,7 @@ void NodeShared::localPubLoop()
         for (auto& msg_detail : msg_details_tmp) {
             std::shared_ptr<ProtoMsg> shared_msg = std::move(msg_detail->msg_copy);
             for (auto& handler : msg_detail->local_handlers) {
-                // for efficiency, dont use try catch.
+                // For efficiency, do not use try/catch.
                 handler->runLocalCallback(shared_msg, msg_detail->info);
             }
         }
@@ -511,7 +515,7 @@ void NodeShared::recvMsgUpdate()
             }
             remote_msg->msg_type = std::string(reinterpret_cast<char*>(msg.data()), msg.size());
         } catch (const zmq::error_t& e) {
-            elog::error("subscriver socket recv error: {}", e.what());
+            elog::error("Subscriber socket receive error: {}", e.what());
             return;
         }
     }
@@ -551,6 +555,7 @@ void NodeShared::remotePubLoop()
             }
             // We deserialize only once, all local handler shared the msg.
             ProtoMsgPtr proto_msg;
+            bool invalid_msg = false;
 
             for (auto& [node_uuid, mp] : handler_info.local_handlers) {
                 for (auto& [handler_uuid, handler] : mp) {
@@ -560,7 +565,7 @@ void NodeShared::remotePubLoop()
                     }
 
                     if (handler->getMsgType() != msg->msg_type) {
-                        elog::error("Local subscripttion handler's msg_type not match remote msg");
+                        elog::error("Local subscription handler's msg_type does not match remote msg");
                         continue;
                     }
 
@@ -568,11 +573,16 @@ void NodeShared::remotePubLoop()
                         // Do deserialize
                         proto_msg = handler->createMsg(msg->data.data(), msg->data.size(), msg->msg_type);
                         if (!proto_msg) {
-                            return;
+                            elog::error("Failed to deserialize remote message for topic [{}]", msg->topic);
+                            invalid_msg = true;
+                            break;
                         }
                     }
 
                     handler->runLocalCallback(proto_msg, MessageInfo(msg->topic, msg->msg_type));
+                }
+                if (invalid_msg) {
+                    break;
                 }
             }
         }
@@ -823,7 +833,7 @@ void NodeShared::handleResponse(const std::deque<std::unique_ptr<RemoteResponse>
             response->req_uuid, req_handler);
 
         if (!has_handler) {
-            elog::error("Receive a service call response, but I don't have a hander for it.");
+            elog::error("Received a service call response, but I don't have a handler for it.");
             continue;
         }
 
