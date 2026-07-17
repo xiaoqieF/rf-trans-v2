@@ -160,9 +160,9 @@ client.request<rf::msgs::ExampleMsg, rf::msgs::ExampleMsg>("/echo", request,
 ## 网络与部署注意事项
 
 - 自动发现依赖 IPv4 UDP 组播。跨主机运行时，主机、防火墙、容器网络和交换机必须允许组播流量及动态分配的 TCP 端口。
-- 设置 `RF_HOST_IP` 可强制库使用指定的本机 IPv4 地址，适用于多网卡、VPN 或容器环境：`RF_HOST_IP=192.168.1.10 ./build/test/test_pub`。
+- Discovery 和 TCP endpoint 使用同一张网卡。默认选择枚举到的第一个可用 IPv4 组播地址；多网卡、VPN 或容器环境应设置 `RF_HOST_IP` 指定可达的本机 IPv4 地址，例如：`RF_HOST_IP=192.168.1.10 ./build/test/test_pub`。
 - 若组播不可用，远端自动发现和通信无法建立；同一进程内的发布订阅和服务调用不依赖远端发现。
-- `Scope::PROCESS` 不向其他进程广播，`Scope::HOST` 仅允许本机发现，`Scope::ALL` 允许网络内发现。
+- `Scope::PROCESS` 不向其他进程广播，`Scope::HOST` 仅允许来自所选网卡或 loopback 的本机发现，`Scope::ALL` 允许网络内发现；同机进程应使用一致的 `RF_HOST_IP` 配置。
 - topic 字符串和 Protobuf 全限定类型名共同参与匹配；同名 topic 上类型不一致的消息或服务不会作为匹配端点使用。
 
 ## 目录说明

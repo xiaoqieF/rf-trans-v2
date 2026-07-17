@@ -86,7 +86,7 @@ inline std::vector<std::string> determineInterfaces()
 inline std::string determineHost()
 {
     std::string host_ip;
-    if (getEnv("RF_HOST_IP", host_ip)) {
+    if (getEnv("RF_HOST_IP", host_ip) && !host_ip.empty()) {
         return host_ip;
     }
     auto interfaces = determineInterfaces();

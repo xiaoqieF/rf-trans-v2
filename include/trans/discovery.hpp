@@ -99,7 +99,6 @@ private:
 
     std::string process_uuid_;
     std::string host_addr_;
-    std::vector<std::string> local_interface_addresses_;
     std::vector<int> multicast_sockets_;
     std::array<char, kMaxRcvStr> recv_buf_{};
     std::atomic<unsigned int> silence_interval_{kDefSilenceInterval};
@@ -132,8 +131,7 @@ namespace details
 {
 inline bool pollSockets(const std::vector<int>& sockets, const int timeout)
 {
-    // We only listen to the first socket, cause we bind all interfaces on it.
-    // all messages from different interfaces will come to the first socket.
+    // Discovery uses one socket for its selected local interface.
     zmq::pollitem_t items[] = {
         {0, static_cast<zmq_fd_t>(sockets.at(0)), ZMQ_POLLIN, 0}
     };
@@ -177,18 +175,9 @@ Discovery<Pub>::Discovery(const std::string& process_uuid,
         throw std::runtime_error("Discovery initialization failed: " + reason);
     };
 
-    std::string host_ip;
-    if (getEnv("RF_HOST_IP", host_ip) && !host_ip.empty()) {
-        local_interface_addresses_ = {host_ip};
-    } else {
-        local_interface_addresses_ = determineInterfaces();
-    }
-
-    for (const auto& net_iface : local_interface_addresses_) {
-        if (!registerNetIface(net_iface)) {
-            const std::string error = strerror(errno);
-            failInitialization("failed to configure multicast interface " + net_iface + ": " + error + ".");
-        }
+    if (!registerNetIface(host_addr_)) {
+        const std::string error = strerror(errno);
+        failInitialization("failed to configure multicast interface " + host_addr_ + ": " + error + ".");
     }
 
     // Reuse addr and reuse port
@@ -552,9 +541,7 @@ void Discovery<Pub>::dispatchDiscoveryMsg(const std::string& from_ip, char* msg,
         return;
     }
 
-    bool is_sender_local = (std::find(local_interface_addresses_.begin(),
-        local_interface_addresses_.end(), from_ip) != local_interface_addresses_.end()) ||
-        (from_ip.find("127.") == 0);
+    bool is_sender_local = from_ip == host_addr_ || from_ip.find("127.") == 0;
 
     DiscoveryCallback<Pub> connect_cb;
     DiscoveryCallback<Pub> disconnect_cb;
