@@ -1,6 +1,9 @@
 #pragma once
 
+#include <algorithm>
 #include <map>
+#include <mutex>
+#include <ostream>
 #include <string>
 #include <vector>
 
@@ -39,7 +42,11 @@ public:
 
     std::vector<std::string> getTopicList() const;
     void print(std::ostream& out) const;
-    void clear() { data_.clear(); }
+    void clear()
+    {
+        std::lock_guard lk(mutex_);
+        data_.clear();
+    }
 
 private:
     mutable std::recursive_mutex mutex_;

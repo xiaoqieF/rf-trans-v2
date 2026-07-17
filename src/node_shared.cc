@@ -265,7 +265,7 @@ void NodeShared::onEndRegistration(const MessagePublisherInfo& pub)
         "\t Proc uuid: {}\n\t Node uuid: {}", remote_proc_uuid, node_uuid);
 
     std::lock_guard lock(pub_sub_mutex_);
-    remote_subscribers_.delPublishersByNode(topic, process_uuid_, node_uuid);
+    remote_subscribers_.delPublishersByNode(topic, remote_proc_uuid, node_uuid);
 }
 
 bool NodeShared::publish(const std::string& topic, char* data, const size_t data_size,

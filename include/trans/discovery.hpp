@@ -376,7 +376,7 @@ void Discovery<Pub>::getTopicList(std::vector<std::string>& topics)
     std::vector<std::string> remote_subs = remote_subscribers_.getTopicList();
 
     for (const auto& t : remote_subs) {
-        if (std::find(topics.begin(), topics.end(), t) != topics.end()) {
+        if (std::find(topics.begin(), topics.end(), t) == topics.end()) {
             topics.push_back(t);
         }
     }
