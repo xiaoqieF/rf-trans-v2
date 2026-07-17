@@ -25,3 +25,9 @@ target_include_directories(test_publisher_info PRIVATE ${GTEST_INCLUDE_DIRS})
 target_link_libraries(test_publisher_info PRIVATE rf-trans GTest::gtest GTest::gtest_main pthread)
 
 add_test(NAME test_publisher_info COMMAND test_publisher_info)
+
+add_executable(test_discovery_init test_discovery_init.cc)
+target_include_directories(test_discovery_init PRIVATE ${GTEST_INCLUDE_DIRS})
+target_link_libraries(test_discovery_init PRIVATE rf-trans GTest::gtest GTest::gtest_main pthread)
+
+add_test(NAME test_discovery_init COMMAND test_discovery_init)

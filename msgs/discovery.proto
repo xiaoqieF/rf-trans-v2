@@ -15,8 +15,6 @@ enum Type
     BYE             = 5;
     NEW_CONNECTION  = 6;
     END_CONNECTION  = 7;
-    SUBSCRIBERS_REQ = 8;
-    SUBSCRIBERS_REP = 9;
 }
 
 message Subscriber

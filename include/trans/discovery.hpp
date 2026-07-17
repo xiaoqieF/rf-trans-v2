@@ -1,9 +1,13 @@
 #pragma once
 
+#include <array>
+#include <cerrno>
+#include <cstring>
 #include <string>
 #include <vector>
 #include <limits>
 #include <sstream>
+#include <stdexcept>
 
 #include <sys/socket.h>
 #include <unistd.h>
@@ -18,7 +22,6 @@
 #include "trans/publisher_info.hpp"
 #include "trans/topic_storage.hpp"
 
-/// TODO: move some unnecessary mutex
 namespace rf
 {
 namespace trans
@@ -33,22 +36,19 @@ public:
     virtual ~Discovery();
 
     void start();
-    void waitForInit();
 
     bool advertise(const Pub& publisher);
     bool unadvertise(const std::string& topic, const std::string& node_uuid);
 
     // Try to discover [topic] immediately, whic send a SUBSCRIBE msg about topic
     bool discover(const std::string& topic) const;
-    void sendSubscribersRep(const MessagePublisherInfo& pub) const;
     void registerNode(const MessagePublisherInfo& pub) const;
     void unRegisterNode(const MessagePublisherInfo& pub) const;
 
     const TopicStorage<Pub>& getInfo() const;
     bool getPublishers(const std::string& topic, AddressMap<Pub>& publishers) const;
 
-    // How do this func work ?
-    void getTopicList(std::vector<std::string>& topics);
+    void getTopicList(std::vector<std::string>& topics) const;
     std::string getHostAddr() const;
     unsigned int getActivityInterval() const;
     void setActivityInterval(const unsigned int ms);
@@ -61,7 +61,6 @@ public:
     void setDisconnectionCb(const DiscoveryCallback<Pub>& cb);
     void setRegisterationCb(const DiscoveryCallback<Pub>& cb);
     void setUnregisterationCb(const DiscoveryCallback<Pub>& cb);
-    void setSubscribersCb(const std::function<void()>& cb);
 
     void printCurrentState() const;
 
@@ -97,6 +96,7 @@ private:
     std::string host_addr_;
     std::vector<std::string> local_interface_addresses_;
     std::vector<int> multicast_sockets_;
+    std::array<char, kMaxRcvStr> recv_buf_{};
     std::atomic<unsigned int> silence_interval_{kDefSilenceInterval};
     std::atomic<unsigned int> activity_interval_{kDefActivityInterval};
     std::atomic<unsigned int> heartbeat_interval_{kDefHeartbeatInterval};
@@ -105,26 +105,19 @@ private:
     DiscoveryCallback<Pub> disconnection_cb_{nullptr};
     DiscoveryCallback<Pub> registration_cb_{nullptr};
     DiscoveryCallback<Pub> unregistration_cb_{nullptr};
-    std::function<void()> subscribers_cb_{nullptr};
 
     TopicStorage<Pub> known_publishers_;
-    TopicStorage<Pub> remote_subscribers_;
 
     // process_uuid --> recent active timestamp
     std::map<std::string, Timestamp> last_seen_by_process_;
     Timestamp time_next_heartbeat_;
     Timestamp time_next_activity_;
-    unsigned int heartbeat_count_{0};
 
     mutable std::mutex mutex_;
     std::thread discover_loop_thread_;
 
     std::atomic<bool> enabled_{false};
     std::atomic<bool> exit_{false};
-
-    std::mutex initialize_mutex_;
-    bool initialized_{false};
-    std::condition_variable initialize_cv_;
 };
 
 using MsgDiscovery = Discovery<MessagePublisherInfo>;
@@ -157,8 +150,28 @@ Discovery<Pub>::Discovery(const std::string& process_uuid,
     : multicast_group_(ip),
       port_(port),
       process_uuid_(process_uuid),
-      host_addr_(determineHost())
+      host_addr_()
 {
+    if (port_ <= 0 || port_ > std::numeric_limits<uint16_t>::max()) {
+        throw std::invalid_argument("Discovery initialization failed: port must be in [1, 65535].");
+    }
+
+    in_addr multicast_addr{};
+    if (inet_pton(AF_INET, multicast_group_.c_str(), &multicast_addr) != 1 ||
+        (ntohl(multicast_addr.s_addr) & 0xf0000000U) != 0xe0000000U) {
+        throw std::invalid_argument("Discovery initialization failed: multicast group must be an IPv4 multicast address.");
+    }
+
+    host_addr_ = determineHost();
+
+    const auto failInitialization = [this](const std::string& reason) {
+        for (const auto sock : multicast_sockets_) {
+            close(sock);
+        }
+        multicast_sockets_.clear();
+        throw std::runtime_error("Discovery initialization failed: " + reason);
+    };
+
     std::string host_ip;
     if (getEnv("RF_HOST_IP", host_ip) && !host_ip.empty()) {
         local_interface_addresses_ = {host_ip};
@@ -167,11 +180,9 @@ Discovery<Pub>::Discovery(const std::string& process_uuid,
     }
 
     for (const auto& net_iface : local_interface_addresses_) {
-        auto succeed = registerNetIface(net_iface);
-        if (!succeed && net_iface == host_addr_) {
-            registerNetIface("127.0.0.1");
-            elog::error("Maybe you set RF_HOST_IP with a non-correct IP address: {}, Using 127.0.0.1 as hostname.", net_iface);
-            host_addr_ = "127.0.0.1";
+        if (!registerNetIface(net_iface)) {
+            const std::string error = strerror(errno);
+            failInitialization("failed to configure multicast interface " + net_iface + ": " + error + ".");
         }
     }
 
@@ -179,15 +190,15 @@ Discovery<Pub>::Discovery(const std::string& process_uuid,
     int reuse_addr = 1;
     if (setsockopt(multicast_sockets_.at(0), SOL_SOCKET, SO_REUSEADDR,
         reinterpret_cast<const char*>(&reuse_addr), sizeof(reuse_addr)) != 0) {
-        elog::error("Error setting socket option (SO_REUSEADDR).");
-        return;
+        const std::string error = strerror(errno);
+        failInitialization("failed to set SO_REUSEADDR: " + error + ".");
     }
 
     int reuse_port = 1;
     if (setsockopt(multicast_sockets_.at(0), SOL_SOCKET, SO_REUSEPORT,
         reinterpret_cast<const char*>(&reuse_port), sizeof(reuse_port)) != 0) {
-        elog::error("Error setting socket option (SO_REUSEPORT).");
-        return;
+        const std::string error = strerror(errno);
+        failInitialization("failed to set SO_REUSEPORT: " + error + ".");
     }
 
     // Bind the first socket to the discovery port
@@ -198,13 +209,13 @@ Discovery<Pub>::Discovery(const std::string& process_uuid,
     local_addr.sin_port = htons(static_cast<ushort>(port_));
 
     if (bind(multicast_sockets_.at(0), reinterpret_cast<sockaddr*>(&local_addr), sizeof(sockaddr_in)) < 0) {
-        elog::error("Bind to a local port[{}] failed.", port_);
-        return;
+        const std::string error = strerror(errno);
+        failInitialization("failed to bind UDP port " + std::to_string(port_) + ": " + error + ".");
     }
 
     memset(&multicast_addr_, 0, sizeof(multicast_addr_));
     multicast_addr_.sin_family = AF_INET;
-    multicast_addr_.sin_addr.s_addr = inet_addr(multicast_group_.c_str());
+    multicast_addr_.sin_addr = multicast_addr;
     multicast_addr_.sin_port = htons(port);
 
     // printCurrentState();
@@ -214,7 +225,6 @@ template<typename Pub>
 Discovery<Pub>::~Discovery()
 {
     exit_ = true;
-    initialize_cv_.notify_all();
     if (discover_loop_thread_.joinable()) {
         discover_loop_thread_.join();
     }
@@ -225,14 +235,6 @@ Discovery<Pub>::~Discovery()
         close(sock);
     }
 }
-
-template<typename Pub>
-void Discovery<Pub>::waitForInit()
-{
-    std::unique_lock lock(initialize_mutex_);
-    initialize_cv_.wait(lock, [this] { return initialized_ || exit_.load(); });
-}
-
 
 template<typename Pub>
 bool Discovery<Pub>::advertise(const Pub& publisher)
@@ -326,12 +328,6 @@ bool Discovery<Pub>::discover(const std::string& topic) const
 }
 
 template<typename Pub>
-void Discovery<Pub>::sendSubscribersRep(const MessagePublisherInfo& pub) const
-{
-    sendMsg(msgs::Discovery::SUBSCRIBERS_REP, pub);
-}
-
-template<typename Pub>
 void Discovery<Pub>::registerNode(const MessagePublisherInfo& pub) const
 {
     sendMsg(msgs::Discovery::NEW_CONNECTION, pub);
@@ -356,30 +352,9 @@ bool Discovery<Pub>::getPublishers(const std::string& topic, AddressMap<Pub>& pu
 }
 
 template<typename Pub>
-void Discovery<Pub>::getTopicList(std::vector<std::string>& topics)
+void Discovery<Pub>::getTopicList(std::vector<std::string>& topics) const
 {
-    topics.clear();
-    {
-        std::lock_guard lock(mutex_);
-        remote_subscribers_.clear();
-    }
-
-    PublisherInfo pub("", "", process_uuid_, "", AdvertiseOptions{});
-    sendMsg(msgs::Discovery::SUBSCRIBERS_REQ, pub);
-
-    waitForInit();
-
-    std::lock_guard lock(mutex_);
     topics = known_publishers_.getTopicList();
-
-    /// ??? whis shoud not work
-    std::vector<std::string> remote_subs = remote_subscribers_.getTopicList();
-
-    for (const auto& t : remote_subs) {
-        if (std::find(topics.begin(), topics.end(), t) == topics.end()) {
-            topics.push_back(t);
-        }
-    }
 }
 
 template<typename Pub>
@@ -453,13 +428,6 @@ void Discovery<Pub>::setUnregisterationCb(const DiscoveryCallback<Pub>& cb)
 }
 
 template<typename Pub>
-void Discovery<Pub>::setSubscribersCb(const std::function<void()>& cb)
-{
-    std::lock_guard lock(mutex_);
-    subscribers_cb_ = cb;
-}
-
-template<typename Pub>
 void Discovery<Pub>::printCurrentState() const
 {
     std::stringstream ss;
@@ -506,7 +474,10 @@ void Discovery<Pub>::printCurrentState() const
 template<typename Pub>
 void Discovery<Pub>::start()
 {
-    enabled_ = true;
+    if (enabled_.exchange(true)) {
+        return;
+    }
+
     auto now = std::chrono::steady_clock::now();
     time_next_activity_ = now;
     time_next_heartbeat_ = now;
@@ -523,7 +494,7 @@ void Discovery<Pub>::loop()
 
         if (details::pollSockets(multicast_sockets_, timeout)) {
             recvDiscoveryMsg();
-            // printCurrentState();
+            printCurrentState();
         }
 
         updateHeartbeat();
@@ -534,27 +505,27 @@ void Discovery<Pub>::loop()
 template<typename Pub>
 void Discovery<Pub>::recvDiscoveryMsg()
 {
-    static char recv_buf[kMaxRcvStr];
     sockaddr_in client_addr;
     socklen_t addr_len = sizeof(client_addr);
 
-    int received = recvfrom(multicast_sockets_.at(0), recv_buf, sizeof(recv_buf), 0,
+    int received = recvfrom(multicast_sockets_.at(0), recv_buf_.data(), recv_buf_.size(), 0,
         reinterpret_cast<sockaddr*>(&client_addr), &addr_len);
 
-    if (received > 0) {
-        uint16_t msg_len = 0;
-        memcpy(&msg_len, recv_buf, sizeof(msg_len));
+    if (received >= static_cast<int>(sizeof(uint16_t))) {
+        uint16_t network_msg_len = 0;
+        memcpy(&network_msg_len, recv_buf_.data(), sizeof(network_msg_len));
+        const uint16_t msg_len = ntohs(network_msg_len);
 
-        if (msg_len + sizeof(msg_len) == static_cast<uint16_t>(received))
+        if (static_cast<size_t>(received) == static_cast<size_t>(msg_len) + sizeof(msg_len))
         {
             std::string src_addr = inet_ntoa(client_addr.sin_addr);
             uint16_t src_port = ntohs(client_addr.sin_port);
 
             // elog::trace("Received discovery msg from {}: {}. receive_len: {}", src_addr, src_port, received);
 
-            dispatchDiscoveryMsg(src_addr, recv_buf + sizeof(msg_len), msg_len);
+            dispatchDiscoveryMsg(src_addr, recv_buf_.data() + sizeof(msg_len), msg_len);
         }
-    } else {
+    } else if (received < 0) {
         elog::error("Discovery::recvDiscoveryMsg recvfrom error.");
     }
 }
@@ -584,7 +555,6 @@ void Discovery<Pub>::dispatchDiscoveryMsg(const std::string& from_ip, char* msg,
     DiscoveryCallback<Pub> disconnect_cb;
     DiscoveryCallback<Pub> register_cb;
     DiscoveryCallback<Pub> unregister_cb;
-    std::function<void()> subscribers_req_cb;
 
     {
         std::lock_guard lock(mutex_);
@@ -594,7 +564,6 @@ void Discovery<Pub>::dispatchDiscoveryMsg(const std::string& from_ip, char* msg,
         disconnect_cb = disconnection_cb_;
         register_cb = registration_cb_;
         unregister_cb = unregistration_cb_;
-        subscribers_req_cb = subscribers_cb_;
     }
 
     if (discovery_msg.type() != msgs::Discovery::HEARTBEAT) {
@@ -673,24 +642,6 @@ void Discovery<Pub>::dispatchDiscoveryMsg(const std::string& from_ip, char* msg,
             }
             break;
         }
-        case msgs::Discovery::SUBSCRIBERS_REQ:
-        {
-            if(subscribers_req_cb) {
-                subscribers_req_cb();
-            }
-            break;
-        }
-        case msgs::Discovery::SUBSCRIBERS_REP:
-        {
-            Pub publisher;
-            publisher.setFromDiscovery(discovery_msg);
-
-            {
-                std::lock_guard lock(mutex_);
-                remote_subscribers_.addPublisher(publisher);
-            }
-            break;
-        }
         case msgs::Discovery::NEW_CONNECTION:
         {
             Pub publisher;
@@ -761,15 +712,6 @@ void Discovery<Pub>::updateHeartbeat()
         }
     }
 
-    if (heartbeat_count_ == 2u) {
-        {
-            std::lock_guard lock(initialize_mutex_);
-            initialized_ = true;
-        }
-        initialize_cv_.notify_all();
-    }
-    ++ heartbeat_count_;
-
     time_next_heartbeat_ = std::chrono::steady_clock::now() +
         std::chrono::milliseconds(heartbeat_interval_.load());
 }
@@ -838,8 +780,6 @@ void Discovery<Pub>::sendMsg(const msgs::Discovery::Type type, const T& pub) con
             break;
         case msgs::Discovery::HEARTBEAT:
         case msgs::Discovery::BYE:
-        case msgs::Discovery::SUBSCRIBERS_REQ:
-        case msgs::Discovery::SUBSCRIBERS_REP:
             break;
         default:
             elog::error("Discovery::SendMsg(), unexpected type: {}", static_cast<int>(type));
@@ -854,17 +794,17 @@ void Discovery<Pub>::sendMsg(const msgs::Discovery::Type type, const T& pub) con
 template<typename Pub>
 void Discovery<Pub>::sendMulticast(const msgs::Discovery& msg) const
 {
-    uint16_t msg_size = 0;
     size_t msg_size_full = msg.ByteSizeLong();
-    if (msg_size_full + sizeof(msg_size) > kMaxRcvStr) {
+    if (msg_size_full + sizeof(uint16_t) > kMaxRcvStr) {
         elog::error("Discovery message too large to send. this should not happen.");
         return;
     }
 
-    msg_size = msg_size_full;
+    const uint16_t msg_size = static_cast<uint16_t>(msg_size_full);
     uint16_t total_size = msg_size + sizeof(msg_size);
     auto send_buf = std::make_unique<char[]>(total_size);
-    memcpy(send_buf.get(), &msg_size, sizeof(msg_size));
+    const uint16_t network_msg_size = htons(msg_size);
+    memcpy(send_buf.get(), &network_msg_size, sizeof(network_msg_size));
 
     if (msg.SerializeToArray(send_buf.get() + sizeof(msg_size), msg_size)) {
         for (auto sock : multicast_sockets_) {
@@ -902,7 +842,7 @@ bool Discovery<Pub>::registerNetIface(const std::string& ip)
 {
     int sock = static_cast<int>(socket(PF_INET, SOCK_DGRAM, IPPROTO_UDP));
     if (sock < 0) {
-        elog::error("Socket creation failed.");
+        elog::error("Socket creation failed: {}", strerror(errno));
         return false;
     }
 
@@ -913,11 +853,12 @@ bool Discovery<Pub>::registerNetIface(const std::string& ip)
     if_addr.s_addr = inet_addr(ip.c_str());
     if (setsockopt(sock, IPPROTO_IP, IP_MULTICAST_IF,
         reinterpret_cast<const char*>(&if_addr), sizeof(if_addr)) != 0) {
-        elog::error("Error setting socket option (IP_MULTICAST_IF).");
+        const int error = errno;
+        elog::error("Error setting socket option (IP_MULTICAST_IF): {}", strerror(error));
+        close(sock);
+        errno = error;
         return false;
     }
-
-    multicast_sockets_.push_back(sock);
 
     // Join the multicast group. We have to do it for each network interface
     // but we can do it on the same socket. We will use the socket at
@@ -925,11 +866,17 @@ bool Discovery<Pub>::registerNetIface(const std::string& ip)
     struct ip_mreq group;
     group.imr_multiaddr.s_addr = inet_addr(multicast_group_.c_str());
     group.imr_interface.s_addr = inet_addr(ip.c_str());
-    if (setsockopt(multicast_sockets_.at(0), IPPROTO_IP, IP_ADD_MEMBERSHIP,
+    const int receive_sock = multicast_sockets_.empty() ? sock : multicast_sockets_.front();
+    if (setsockopt(receive_sock, IPPROTO_IP, IP_ADD_MEMBERSHIP,
         reinterpret_cast<const char*>(&group), sizeof(group)) != 0) {
-        elog::error("Error setting socket option (IP_ADD_MEMBERSHIP): {}", strerror(errno));
+        const int error = errno;
+        elog::error("Error setting socket option (IP_ADD_MEMBERSHIP): {}", strerror(error));
+        close(sock);
+        errno = error;
         return false;
     }
+
+    multicast_sockets_.push_back(sock);
 
     return true;
 }

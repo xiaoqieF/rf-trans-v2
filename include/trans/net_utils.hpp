@@ -1,7 +1,9 @@
 #pragma once
 
+#include <cerrno>
 #include <string>
 #include <cstring>
+#include <stdexcept>
 #include <vector>
 
 #include <arpa/inet.h>
@@ -27,8 +29,10 @@ inline std::vector<std::string> determineInterfaces()
     struct ifaddrs* ifa = nullptr, *ifp = nullptr;
     int rc = getifaddrs(&ifp);
     if (rc < 0) {
-        elog::error("error in getifaddrs: {}.", strerror(rc));
-        exit(-1);
+        const int error = errno;
+        const std::string message = "getifaddrs failed: " + std::string(strerror(error));
+        elog::error("{}.", message);
+        throw std::runtime_error(message);
     }
 
     for (ifa = ifp; ifa; ifa = ifa->ifa_next) {

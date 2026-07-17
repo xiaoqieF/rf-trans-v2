@@ -26,10 +26,6 @@ inline std::string toString(const msgs::Discovery::Type& t) {
         return "NEW_CONNECTION";
       case msgs::Discovery::END_CONNECTION:
         return "END_CONNECTION";
-      case msgs::Discovery::SUBSCRIBERS_REQ:
-        return "SUBSCRIBERS_REQ";
-      case msgs::Discovery::SUBSCRIBERS_REP:
-        return "SUBSCRIBERS_REP";
     };
     return "UNKNOWN";
 }
