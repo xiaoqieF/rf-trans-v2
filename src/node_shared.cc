@@ -294,7 +294,7 @@ void NodeShared::onEndRegistration(const MessagePublisherInfo& pub)
     remote_subscribers_.delPublishersByNode(topic, remote_proc_uuid, node_uuid);
 }
 
-bool NodeShared::publish(const std::string& topic, char* data, const size_t data_size,
+bool NodeShared::publishRemote(const std::string& topic, char* data, const size_t data_size,
     DeallocFunc* ffn, const std::string& msg_type)
 {
     // Create the messages.
@@ -311,10 +311,148 @@ bool NodeShared::publish(const std::string& topic, char* data, const size_t data
         publisher_->send(msg2, zmq::send_flags::sndmore);
         publisher_->send(msg3, zmq::send_flags::none);
     } catch (const zmq::error_t& e) {
-        elog::error("NodeShared::publish error: {}", e.what());
+        elog::error("NodeShared::publishRemote error: {}", e.what());
         return false;
     }
     return true;
+}
+
+bool NodeShared::advertiseMessage(const std::string& topic, const std::string& node_uuid,
+    const std::string& msg_type, const AdvertiseMessageOptions& options,
+    MessagePublisherInfo& publisher)
+{
+    publisher = MessagePublisherInfo(topic, my_address_, "unused", process_uuid_, node_uuid, msg_type, options);
+    return msg_discovery_->advertise(publisher);
+}
+
+bool NodeShared::subscribe(const std::string& topic, const std::string& node_uuid,
+    const ISubscriptionHandlerPtr& handler)
+{
+    local_subscribers_.normal_.addHandler(topic, node_uuid, handler);
+    return msg_discovery_->discover(topic);
+}
+
+bool NodeShared::advertiseService(const std::string& topic, const std::string& node_uuid,
+    const IRepHandlerPtr& handler, const std::string& req_type,
+    const std::string& rep_type, const AdvertiseServiceOptions& options)
+{
+    response_handlers_.addHandler(topic, node_uuid, handler);
+    ServicePublisherInfo publisher(topic, my_replier_address_, replier_uuid_, process_uuid_, node_uuid,
+        req_type, rep_type, options);
+    return advertisePublisher(publisher);
+}
+
+bool NodeShared::unadvertiseService(const std::string& topic, const std::string& node_uuid)
+{
+    response_handlers_.removeHandlersForNode(topic, node_uuid);
+    return srv_discovery_->unadvertise(topic, node_uuid);
+}
+
+bool NodeShared::hasService(const std::string& topic) const
+{
+    if (response_handlers_.hasTopic(topic)) {
+        return true;
+    }
+
+    AddressMap<ServicePublisherInfo> publishers;
+    return getServicePublishers(topic, publishers);
+}
+
+void NodeShared::getAdvertisedTopics(const std::string& node_uuid, std::set<std::string>& topics) const
+{
+    std::vector<MessagePublisherInfo> publishers;
+    msg_discovery_->getInfo().getPublishersByNode(process_uuid_, node_uuid, publishers);
+    for (const auto& publisher : publishers) {
+        topics.insert(publisher.getTopic());
+    }
+}
+
+void NodeShared::getMessageTopics(std::vector<std::string>& topics) const
+{
+    msg_discovery_->getTopicList(topics);
+}
+
+void NodeShared::getServiceTopics(std::vector<std::string>& topics) const
+{
+    srv_discovery_->getTopicList(topics);
+}
+
+bool NodeShared::getLocalServiceHandler(const std::string& topic, const std::string& req_type,
+    const std::string& rep_type, IRepHandlerPtr& handler) const
+{
+    return response_handlers_.getFirstHandler(topic, req_type, rep_type, handler);
+}
+
+bool NodeShared::requestRemoteService(const std::string& topic, const std::string& node_uuid,
+    const IReqHandlerPtr& handler)
+{
+    AddressMap<ServicePublisherInfo> publishers;
+    if (!getServicePublishers(topic, publishers)) {
+        return false;
+    }
+
+    request_handlers_.addHandler(topic, node_uuid, handler);
+    sendPendingRemoteReqs(topic, handler->getReqTypeName(), handler->getRepTypeName());
+    return true;
+}
+
+bool NodeShared::publishMessage(const MessagePublisherInfo& publisher, std::unique_ptr<ProtoMsg> msg)
+{
+    const std::string& topic = publisher.getTopic();
+    const std::string msg_type = publisher.getMsgType();
+    auto subscribers = checkSubscriberInfo(topic, msg_type);
+
+    if (subscribers.have_remote) {
+        auto msg_size = msg->ByteSizeLong();
+        char* serialize_buffer = new char[msg_size];
+        if (!msg->SerializeToArray(serialize_buffer, msg_size)) {
+            elog::error("Publisher::publish() error serializing data");
+            delete [] serialize_buffer;
+            return false;
+        }
+
+        auto deallocator = [] (void* buffer, void*) {
+            delete [] reinterpret_cast<char*>(buffer);
+        };
+
+        if (!publishRemote(topic, serialize_buffer, msg_size, deallocator, msg_type)) {
+            return false;
+        }
+    }
+
+    if (subscribers.local_handler_info.have_local) {
+        auto details = std::make_unique<PublishMsgDetails>();
+        details->info.setTopic(topic);
+        details->info.setMsgType(msg_type);
+        details->msg_copy = std::move(msg);
+        details->publisher_node_uuid = publisher.getNodeUuid();
+
+        for (const auto& [node_uuid, handlers] : subscribers.local_handler_info.local_handlers) {
+            for (const auto& [handler_uuid, handler] : handlers) {
+                if (!handler) {
+                    elog::error("Publisher::publish() error, null local subscription handler");
+                    continue;
+                }
+                if (handler->getMsgType() != msg_type) {
+                    elog::error("Publisher::publish() error, msg type mismatch");
+                    continue;
+                }
+                details->local_handlers.push_back(handler);
+            }
+        }
+
+        std::lock_guard lock(local_pub_mutex_);
+        local_pub_queue_.push_back(std::move(details));
+        local_pub_cv_.notify_one();
+    }
+
+    return true;
+}
+
+bool NodeShared::hasSubscribers(const std::string& topic, const std::string& msg_type) const
+{
+    return local_subscribers_.hasSubscriber(topic, msg_type) ||
+        remote_subscribers_.hasTopic(topic, msg_type);
 }
 
 void NodeShared::sendPendingRemoteReqs(const std::string& topic,

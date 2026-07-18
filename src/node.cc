@@ -44,28 +44,10 @@ NodeShared& Node::getNodeShared() const
     return impl_->node_shared;
 }
 
-bool Node::subscribeHelper(const std::string& topic)
-{
-    impl_->subscribed_topics.insert(topic);
-
-    if (!getNodeShared().msg_discovery_->discover(topic)) {
-        elog::error("Node::subscribeHelper(): Error discovering topic[{}]", topic);
-        return false;
-    }
-
-    return true;
-}
-
 bool Node::unadvertiseService(const std::string& topic)
 {
     impl_->advertised_srvs.erase(topic);
-    getNodeShared().response_handlers_.removeHandlersForNode(topic, getNodeUuid());
-
-    if (!getNodeShared().srv_discovery_->unadvertise(topic, getNodeUuid())) {
-        return false;
-    }
-
-    return true;
+    return getNodeShared().unadvertiseService(topic, getNodeUuid());
 }
 
 bool Node::waitForService(const std::string& topic, std::chrono::duration<int64_t, std::nano> timeout)
@@ -73,12 +55,8 @@ bool Node::waitForService(const std::string& topic, std::chrono::duration<int64_
     using namespace std::chrono_literals;
     auto begin = std::chrono::steady_clock::now();
 
-    AddressMap<ServicePublisherInfo> remote_publishers;
     while (true) {
-        bool has_server =
-            getNodeShared().response_handlers_.hasTopic(topic) ||
-            getNodeShared().getServicePublishers(topic, remote_publishers);
-        if (has_server) {
+        if (getNodeShared().hasService(topic)) {
             return true;
         }
         std::this_thread::sleep_for(20ms);
@@ -113,19 +91,14 @@ std::unordered_set<std::string>& Node::servicesAdvertised()
 std::set<std::string> Node::getAdvertisedTopics()
 {
     std::set<std::string> topics;
-    std::vector<MessagePublisherInfo> pubs;
-    getNodeShared().msg_discovery_->getInfo().getPublishersByNode(getNodeShared().process_uuid_, impl_->node_uuid, pubs);
-    for (const auto& pub : pubs) {
-        topics.insert(pub.getTopic());
-    }
-
+    getNodeShared().getAdvertisedTopics(impl_->node_uuid, topics);
     return topics;
 }
 
 std::vector<std::string> Node::getTopicList() const
 {
     std::vector<std::string> topics;
-    getNodeShared().msg_discovery_->getTopicList(topics);
+    getNodeShared().getMessageTopics(topics);
 
     return topics;
 }
@@ -133,7 +106,7 @@ std::vector<std::string> Node::getTopicList() const
 std::vector<std::string> Node::getServiceList() const
 {
     std::vector<std::string> topics;
-    getNodeShared().srv_discovery_->getTopicList(topics);
+    getNodeShared().getServiceTopics(topics);
 
     return topics;
 }

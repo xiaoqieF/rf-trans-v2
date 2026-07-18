@@ -3,6 +3,7 @@
 #include <condition_variable>
 #include <deque>
 #include <mutex>
+#include <set>
 #include <string>
 #include <thread>
 #include <vector>
@@ -28,19 +29,40 @@ public:
     NodeShared(const NodeShared&) = delete;
     NodeShared& operator=(const NodeShared&) = delete;
 
-    bool publish(const std::string& topic, char* data, const size_t data_size,
-        DeallocFunc* ffn, const std::string& msg_type);
-    void sendPendingRemoteReqs(const std::string& topic,
-        const std::string& req_type, const std::string& rep_type);
-    bool advertisePublisher(const ServicePublisherInfo& pub);
     bool unsubscribe(const std::string& topic, const std::string& node_uuid);
-    bool getServicePublishers(const std::string& topic, AddressMap<ServicePublisherInfo>& publishers) const;
+    bool advertiseMessage(const std::string& topic, const std::string& node_uuid,
+        const std::string& msg_type, const AdvertiseMessageOptions& options,
+        MessagePublisherInfo& publisher);
+    bool subscribe(const std::string& topic, const std::string& node_uuid,
+        const ISubscriptionHandlerPtr& handler);
+    bool advertiseService(const std::string& topic, const std::string& node_uuid,
+        const IRepHandlerPtr& handler, const std::string& req_type,
+        const std::string& rep_type, const AdvertiseServiceOptions& options);
+    bool unadvertiseService(const std::string& topic, const std::string& node_uuid);
+    bool hasService(const std::string& topic) const;
+    void getAdvertisedTopics(const std::string& node_uuid, std::set<std::string>& topics) const;
+    void getMessageTopics(std::vector<std::string>& topics) const;
+    void getServiceTopics(std::vector<std::string>& topics) const;
+
+    bool getLocalServiceHandler(const std::string& topic, const std::string& req_type,
+        const std::string& rep_type, IRepHandlerPtr& handler) const;
+    bool requestRemoteService(const std::string& topic, const std::string& node_uuid,
+        const IReqHandlerPtr& handler);
+
+    bool publishMessage(const MessagePublisherInfo& publisher, std::unique_ptr<ProtoMsg> msg);
+    bool hasSubscribers(const std::string& topic, const std::string& msg_type) const;
 
 private:
     NodeShared();
     virtual ~NodeShared();
 
     bool initializeSockets();
+    bool publishRemote(const std::string& topic, char* data, size_t data_size,
+        DeallocFunc* ffn, const std::string& msg_type);
+    void sendPendingRemoteReqs(const std::string& topic,
+        const std::string& req_type, const std::string& rep_type);
+    bool advertisePublisher(const ServicePublisherInfo& pub);
+    bool getServicePublishers(const std::string& topic, AddressMap<ServicePublisherInfo>& publishers) const;
     void receiveMsgLoop();
     // todo: use thread pool to handle local pub
     void localPubLoop();
@@ -152,8 +174,6 @@ private:
     mutable std::mutex remote_service_msg_mutex_;
     std::condition_variable remote_service_msg_cv_;
 
-    friend class Node;
-    friend class Publisher;
 };
 
 } // namespace trans

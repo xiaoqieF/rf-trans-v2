@@ -21,7 +21,6 @@ private:
     HandlerStorage<ISubscriptionHandler> normal_;
 
     friend class NodeShared;
-    friend class Node;
 };
 
 struct HandlerInfo

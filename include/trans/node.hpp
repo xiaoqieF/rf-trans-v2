@@ -83,7 +83,6 @@ public:
 
 private:
     NodeShared& getNodeShared() const;
-    bool subscribeHelper(const std::string& topic);
     std::unordered_set<std::string>& topicsSubscribed();
     std::unordered_set<std::string>& servicesAdvertised();
 
@@ -104,10 +103,8 @@ Publisher Node::advertise(const std::string& topic, const AdvertiseMessageOption
         return Publisher{};
     }
 
-    MessagePublisherInfo pub(topic, getNodeShared().my_address_, "unused",
-        getNodeShared().process_uuid_, getNodeUuid(), msg_type, ops);
-
-    if (!getNodeShared().msg_discovery_->advertise(pub)) {
+    MessagePublisherInfo pub;
+    if (!getNodeShared().advertiseMessage(topic, getNodeUuid(), msg_type, ops, pub)) {
         elog::error("Node::advertise(): Error advertising topic[{}]", topic);
         return Publisher{};
     }
@@ -125,9 +122,8 @@ bool Node::subscribe(const std::string& topic, std::function<void(const std::sha
     auto sub_handler = std::make_shared<SubscriptionHandler<MessageT>>(getNodeUuid());
     sub_handler->setCallback(cb);
 
-    getNodeShared().local_subscribers_.normal_.addHandler(topic, getNodeUuid(), sub_handler);
-
-    return subscribeHelper(topic);
+    topicsSubscribed().insert(topic);
+    return getNodeShared().subscribe(topic, getNodeUuid(), sub_handler);
 }
 
 template<typename RequestT, typename ReplyT>
@@ -145,12 +141,8 @@ bool Node::advertise(const std::string& topic,
 
     servicesAdvertised().insert(topic);
 
-    getNodeShared().response_handlers_.addHandler(topic, getNodeUuid(), rep_handler_ptr);
-
-    ServicePublisherInfo pub(topic, getNodeShared().my_replier_address_, getNodeShared().replier_uuid_,
-        getNodeShared().process_uuid_, getNodeUuid(), RequestT::descriptor()->full_name(), ReplyT::descriptor()->full_name(), ops);
-
-    if (!getNodeShared().advertisePublisher(pub)) {
+    if (!getNodeShared().advertiseService(topic, getNodeUuid(), rep_handler_ptr,
+            RequestT::descriptor()->full_name(), ReplyT::descriptor()->full_name(), ops)) {
         elog::error("Node::advertise(): Error advertising service [{}]", topic);
         return false;
     }
@@ -186,7 +178,7 @@ bool Node::request(const std::string& topic, const std::shared_ptr<RequestT>& re
 {
     // First, find a local responser
     IRepHandlerPtr rep_handler;
-    bool local_responser_found = getNodeShared().response_handlers_.getFirstHandler(
+    bool local_responser_found = getNodeShared().getLocalServiceHandler(
         topic, RequestT::descriptor()->full_name(), ReplyT::descriptor()->full_name(), rep_handler
     );
 
@@ -198,17 +190,11 @@ bool Node::request(const std::string& topic, const std::shared_ptr<RequestT>& re
         return true;
     }
 
-    AddressMap<ServicePublisherInfo> remote_publishers;
-    if (getNodeShared().getServicePublishers(topic, remote_publishers)) {
-        // No local responser, find remote one
-        auto req_handler_ptr = std::make_shared<ReqHandler<RequestT, ReplyT>>(getNodeUuid());
+    auto req_handler_ptr = std::make_shared<ReqHandler<RequestT, ReplyT>>(getNodeUuid());
+    req_handler_ptr->setMessage(req);
+    req_handler_ptr->setCallback(callback);
 
-        req_handler_ptr->setMessage(req);
-        req_handler_ptr->setCallback(callback);
-
-        getNodeShared().request_handlers_.addHandler(topic, getNodeUuid(), req_handler_ptr);
-        getNodeShared().sendPendingRemoteReqs(topic, RequestT::descriptor()->full_name(), ReplyT::descriptor()->full_name());
-    } else {
+    if (!getNodeShared().requestRemoteService(topic, getNodeUuid(), req_handler_ptr)) {
         elog::warn("No service server available, topic[{}]", topic);
         return false;
     }
@@ -221,7 +207,7 @@ bool Node::request(const std::string& topic, const std::shared_ptr<RequestT>& re
 {
     // First, find a local responser
     IRepHandlerPtr rep_handler;
-    bool local_responser_found = getNodeShared().response_handlers_.getFirstHandler(
+    bool local_responser_found = getNodeShared().getLocalServiceHandler(
         topic, RequestT::descriptor()->full_name(), ReplyT::descriptor()->full_name(), rep_handler
     );
 
@@ -234,12 +220,7 @@ bool Node::request(const std::string& topic, const std::shared_ptr<RequestT>& re
     auto req_handler_ptr = std::make_shared<ReqHandler<RequestT, ReplyT>>(getNodeUuid());
     req_handler_ptr->setMessage(req);
 
-    AddressMap<ServicePublisherInfo> remote_publishers;
-    if (getNodeShared().getServicePublishers(topic, remote_publishers)) {
-        // No local responser, find remote one
-        getNodeShared().request_handlers_.addHandler(topic, getNodeUuid(), req_handler_ptr);
-        getNodeShared().sendPendingRemoteReqs(topic, RequestT::descriptor()->full_name(), ReplyT::descriptor()->full_name());
-    } else {
+    if (!getNodeShared().requestRemoteService(topic, getNodeUuid(), req_handler_ptr)) {
         elog::warn("No service server available, topic[{}]", topic);
         result = false;
         return false;
