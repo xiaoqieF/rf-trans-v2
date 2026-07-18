@@ -66,7 +66,7 @@ NodeShared::NodeShared()
     elog::debug(ss.str());
 
     receive_msg_thread_ = std::thread(&NodeShared::receiveMsgLoop, this);
-    pthread_setname_np(receive_msg_thread_.native_handle(), "rf_recv_msg_loop");
+    pthread_setname_np(receive_msg_thread_.native_handle(), "rf_recv_loop");
 
     msg_discovery_->setConnectionCb([this] (const MessagePublisherInfo& pub) {
         this->onNewConnection(pub);
@@ -96,13 +96,13 @@ NodeShared::NodeShared()
     srv_discovery_->start();
 
     local_pub_thread_ = std::thread(&NodeShared::localPubLoop, this);
-    pthread_setname_np(local_pub_thread_.native_handle(), "rf_local_pub_loop");
+    pthread_setname_np(local_pub_thread_.native_handle(), "rf_local_pub");
 
     remote_msg_handle_thread_ = std::thread(&NodeShared::remotePubLoop, this);
-    pthread_setname_np(remote_msg_handle_thread_.native_handle(), "rf_remote_pub_loop");
+    pthread_setname_np(remote_msg_handle_thread_.native_handle(), "rf_remote_pub");
 
     service_handle_thread_ = std::thread(&NodeShared::serviceHandleLoop, this);
-    pthread_setname_np(service_handle_thread_.native_handle(), "rf_service_handle_loop");
+    pthread_setname_np(service_handle_thread_.native_handle(), "rf_srv_loop");
 
 }
 
