@@ -90,32 +90,13 @@ bool Node::waitForService(const std::string& topic, std::chrono::duration<int64_
     return false;
 }
 
-/// TODO: move this function to node_shared
 bool Node::unsubscribe(const std::string& topic)
 {
-    elog::trace("unsubscribe topic[{}]", topic);
-    /// note that we dont remove msg in local_pub_queue manually.
-    /// when unsubscribed called, callback may be called in a short duration
-    getNodeShared().local_subscribers_.removeHandlersForNode(topic, getNodeUuid());
+    if (!getNodeShared().unsubscribe(topic, getNodeUuid())) {
+        return false;
+    }
 
     impl_->subscribed_topics.erase(topic);
-
-    // If I am the last subscriber, remove the filter for this topic.
-    if (!getNodeShared().local_subscribers_.hasSubscriber(topic)) {
-        std::lock_guard lk(getNodeShared().pub_sub_mutex_);
-        getNodeShared().subscriber_->set(zmq::sockopt::unsubscribe, topic);
-    }
-
-    AddressMap<MessagePublisherInfo> addresses;
-
-    getNodeShared().msg_discovery_->getPublishers(topic, addresses);
-
-    for (auto& [p_uuid, pubs] : addresses) {
-        MessagePublisherInfo pub(topic, getNodeShared().my_address_, p_uuid, getNodeShared().process_uuid_, getNodeUuid(),
-        kGenericMessageType, AdvertiseMessageOptions{});
-        getNodeShared().msg_discovery_->unRegisterNode(pub);
-    }
-
     return true;
 }
 

@@ -68,18 +68,29 @@ NodeShared::NodeShared()
     receive_msg_thread_ = std::thread(&NodeShared::receiveMsgLoop, this);
     pthread_setname_np(receive_msg_thread_.native_handle(), "rf_recv_loop");
 
+    // Triggered when a new publisher is discovered, as follows:
+    // 1. Local publisher advertise a new topic
+    // 2. Remote publisher advertise a new topic (discovery receives a new ADVERTISE message)
     msg_discovery_->setConnectionCb([this] (const MessagePublisherInfo& pub) {
         this->onNewConnection(pub);
     });
 
+    // Triggered when a publisher is disconnected, as follows:
+    // 1. Remote publisher unadvertises a topic (discovery receives a new UNADVERTISE message)
+    // 2. Remote publisher process exits (discovery receives a new BYE message)
+    // 3. Remote publisher heartbeat timeout
     msg_discovery_->setDisconnectionCb([this] (const MessagePublisherInfo& pub) {
         this->onNewDisconnection(pub);
     });
 
+    // Triggered when remote subscriber connects to a local publisher successfully
+    // In this case, discovery receives a NEW_CONNECTION message from the remote subscriber
     msg_discovery_->setRegistrationCb([this] (const MessagePublisherInfo& pub) {
         this->onNewRegistration(pub);
     });
 
+    // Triggered when remote subscriber disconnects from a local publisher
+    // In this case, discovery receives a END_CONNECTION message from the remote subscriber
     msg_discovery_->setUnregistrationCb([this] (const MessagePublisherInfo& pub) {
         this->onEndRegistration(pub);
     });
@@ -148,7 +159,7 @@ void NodeShared::onNewConnection(const MessagePublisherInfo& pub)
     std::string addr = pub.getAddr();
     std::string remote_proc_uuid = pub.getProcessUuid();
 
-    elog::debug("Connection Callback");
+    // elog::debug("Connection Callback");
     // std::stringstream ss;
     // ss << pub;
     // elog::debug(ss.str());
@@ -200,6 +211,32 @@ void NodeShared::onNewDisconnection(const MessagePublisherInfo& pub)
     }
 
     connections_.delPublishersByNode(topic, remote_proc_uuid, node_uuid);
+}
+
+bool NodeShared::unsubscribe(const std::string& topic, const std::string& node_uuid)
+{
+    elog::trace("unsubscribe topic[{}]", topic);
+
+    {
+        std::lock_guard lock(pub_sub_mutex_);
+        // A queued local message may still invoke its callback after this removal.
+        local_subscribers_.removeHandlersForNode(topic, node_uuid);
+
+        if (!local_subscribers_.hasSubscriber(topic)) {
+            subscriber_->set(zmq::sockopt::unsubscribe, topic);
+        }
+    }
+
+    AddressMap<MessagePublisherInfo> addresses;
+    msg_discovery_->getPublishers(topic, addresses);
+
+    for (const auto& [publisher_process_uuid, publishers] : addresses) {
+        MessagePublisherInfo pub(topic, my_address_, publisher_process_uuid, process_uuid_, node_uuid,
+            kGenericMessageType, AdvertiseMessageOptions{});
+        msg_discovery_->unRegisterNode(pub);
+    }
+
+    return true;
 }
 
 void NodeShared::onNewSrvConnection(const ServicePublisherInfo& pub)

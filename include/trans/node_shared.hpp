@@ -31,6 +31,7 @@ public:
     void sendPendingRemoteReqs(const std::string& topic,
         const std::string& req_type, const std::string& rep_type);
     bool advertisePublisher(const ServicePublisherInfo& pub);
+    bool unsubscribe(const std::string& topic, const std::string& node_uuid);
     bool getServicePublishers(const std::string& topic, AddressMap<ServicePublisherInfo>& publishers) const;
 
 private:
