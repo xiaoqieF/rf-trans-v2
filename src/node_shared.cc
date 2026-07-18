@@ -159,38 +159,30 @@ void NodeShared::onNewConnection(const MessagePublisherInfo& pub)
     std::string addr = pub.getAddr();
     std::string remote_proc_uuid = pub.getProcessUuid();
 
-    // elog::debug("Connection Callback");
-    // std::stringstream ss;
-    // ss << pub;
-    // elog::debug(ss.str());
-
-    std::lock_guard lock(pub_sub_mutex_);
     // Do not handle connection msg from the same process
     if (!local_subscribers_.hasSubscriber(topic) || remote_proc_uuid == process_uuid_) {
         return;
     }
 
-    if (!connections_.hasPublisher(addr)) {
-        elog::debug("Connect to pub.");
-        subscriber_->connect(addr.c_str());
-    }
-
-    // Add a new subscribe filter for the topic
-    subscriber_->set(zmq::sockopt::subscribe, topic);
-
-    connections_.addPublisher(pub);
-    elog::debug("Connected to [{}] for data.", addr);
-
-    MessagePublisherInfo pub1(pub);
-    pub1.setProcessUuid(process_uuid_);
-    pub1.setCtrl(pub.getProcessUuid());
-
+    std::vector<MessagePublisherInfo> registrations;
+    MessagePublisherInfo registration(pub);
+    registration.setProcessUuid(process_uuid_);
+    registration.setCtrl(pub.getProcessUuid());
     auto handler_node_uuids = local_subscribers_.getNodeUuids(topic, pub.getMsgType());
-
     for (const auto& node_uuid : handler_node_uuids) {
-        pub1.setNodeUuid(node_uuid);
-        msg_discovery_->registerNode(pub1);
+        registration.setNodeUuid(node_uuid);
+        registrations.push_back(registration);
     }
+
+    if (!remote_publishers_.hasPublisher(addr)) {
+        elog::debug("Connect to pub.");
+        enqueueSubscriberCommand(SubscriberCommandType::Connect, addr);
+    }
+
+    enqueueSubscriberCommand(SubscriberCommandType::Subscribe, topic, std::move(registrations));
+
+    remote_publishers_.addPublisher(pub);
+    elog::debug("Connected to [{}] for data.", addr);
 }
 
 void NodeShared::onNewDisconnection(const MessagePublisherInfo& pub)
@@ -201,30 +193,26 @@ void NodeShared::onNewDisconnection(const MessagePublisherInfo& pub)
 
     elog::debug("New disconnection detected, process_uuid: {}", remote_proc_uuid);
 
-    std::lock_guard lock(pub_sub_mutex_);
     // Discovery reports a process-level disconnect without a topic or node UUID.
     // Registration teardown is handled exclusively by onEndRegistration().
     if (topic.empty() && node_uuid.empty()) {
         remote_subscribers_.delPublishersByProc(remote_proc_uuid);
-        connections_.delPublishersByProc(remote_proc_uuid);
+        remote_publishers_.delPublishersByProc(remote_proc_uuid);
         return;
     }
 
-    connections_.delPublishersByNode(topic, remote_proc_uuid, node_uuid);
+    remote_publishers_.delPublishersByNode(topic, remote_proc_uuid, node_uuid);
 }
 
 bool NodeShared::unsubscribe(const std::string& topic, const std::string& node_uuid)
 {
     elog::trace("unsubscribe topic[{}]", topic);
 
-    {
-        std::lock_guard lock(pub_sub_mutex_);
-        // A queued local message may still invoke its callback after this removal.
-        local_subscribers_.removeHandlersForNode(topic, node_uuid);
+    // A queued local message may still invoke its callback after this removal.
+    local_subscribers_.removeHandlersForNode(topic, node_uuid);
 
-        if (!local_subscribers_.hasSubscriber(topic)) {
-            subscriber_->set(zmq::sockopt::unsubscribe, topic);
-        }
+    if (!local_subscribers_.hasSubscriber(topic)) {
+        enqueueSubscriberCommand(SubscriberCommandType::Unsubscribe, topic);
     }
 
     AddressMap<MessagePublisherInfo> addresses;
@@ -287,7 +275,6 @@ void NodeShared::onNewRegistration(const MessagePublisherInfo& pub)
     elog::debug("Registering a new remote connection.\n"
         "\t Proc uuid: {}\n\t Node uuid: {}", proc_uuid, node_uuid);
 
-    std::lock_guard lock(pub_sub_mutex_);
     remote_subscribers_.addPublisher(pub);
 }
 
@@ -304,7 +291,6 @@ void NodeShared::onEndRegistration(const MessagePublisherInfo& pub)
     elog::debug("EndRegistering a remote connection.\n"
         "\t Proc uuid: {}\n\t Node uuid: {}", remote_proc_uuid, node_uuid);
 
-    std::lock_guard lock(pub_sub_mutex_);
     remote_subscribers_.delPublishersByNode(topic, remote_proc_uuid, node_uuid);
 }
 
@@ -318,7 +304,7 @@ bool NodeShared::publish(const std::string& topic, char* data, const size_t data
                    msg2(data, data_size, ffn, nullptr),
                    msg3(msg_type.data(), msg_type.size());
 
-    std::lock_guard lock(pub_sub_mutex_);
+    std::lock_guard lock(publisher_mutex_);
     try {
         publisher_->send(msg0, zmq::send_flags::sndmore);
         publisher_->send(msg1, zmq::send_flags::sndmore);
@@ -497,7 +483,10 @@ void NodeShared::localPubLoop()
 
 void NodeShared::receiveMsgLoop()
 {
+    // subscriber_ socket only operates in this thread
     while (!exit_) {
+        applySubscriberCommands();
+
         zmq::pollitem_t items[] = {
             {*subscriber_, 0, ZMQ_POLLIN, 0},
             {*replier_, 0, ZMQ_POLLIN, 0},
@@ -522,39 +511,76 @@ void NodeShared::receiveMsgLoop()
     }
 }
 
+void NodeShared::enqueueSubscriberCommand(const SubscriberCommandType type, std::string value,
+    std::vector<MessagePublisherInfo> registrations)
+{
+    std::lock_guard lock(subscriber_commands_mutex_);
+    subscriber_commands_.push_back({type, std::move(value), std::move(registrations)});
+}
+
+void NodeShared::applySubscriberCommands()
+{
+    std::deque<SubscriberCommand> commands;
+    {
+        std::lock_guard lock(subscriber_commands_mutex_);
+        commands.swap(subscriber_commands_);
+    }
+
+    for (const auto& command : commands) {
+        try {
+            switch (command.type) {
+            case SubscriberCommandType::Connect:
+                subscriber_->connect(command.value.c_str());
+                break;
+            case SubscriberCommandType::Subscribe:
+                if (local_subscribers_.hasSubscriber(command.value)) {
+                    subscriber_->set(zmq::sockopt::subscribe, command.value);
+                    for (const auto& registration : command.registrations) {
+                        msg_discovery_->registerNode(registration);
+                    }
+                }
+                break;
+            case SubscriberCommandType::Unsubscribe:
+                if (!local_subscribers_.hasSubscriber(command.value)) {
+                    subscriber_->set(zmq::sockopt::unsubscribe, command.value);
+                }
+                break;
+            }
+        } catch (const zmq::error_t& e) {
+            elog::error("Subscriber socket update error: {}", e.what());
+        }
+    }
+}
+
 void NodeShared::recvMsgUpdate()
 {
     auto remote_msg = std::make_unique<RemoteMsg>();
     zmq::message_t msg(0);
-    {
-        // protect socket
-        std::lock_guard lock(pub_sub_mutex_);
-        try {
-            if (!subscriber_->recv(msg)) {
-                return;
-            }
-            remote_msg->topic = std::string(reinterpret_cast<char*>(msg.data()), msg.size());
-
-            if (!subscriber_->recv(msg)) {
-                return;
-            }
-            remote_msg->sender = std::string(reinterpret_cast<char*>(msg.data()), msg.size());
-
-            if (!subscriber_->recv(msg)) {
-                return;
-            }
-            // We just move the msg instead of copy
-            remote_msg->data = std::move(msg);
-            msg.rebuild();
-
-            if (!subscriber_->recv(msg)) {
-                return;
-            }
-            remote_msg->msg_type = std::string(reinterpret_cast<char*>(msg.data()), msg.size());
-        } catch (const zmq::error_t& e) {
-            elog::error("Subscriber socket receive error: {}", e.what());
+    try {
+        if (!subscriber_->recv(msg)) {
             return;
         }
+        remote_msg->topic = std::string(reinterpret_cast<char*>(msg.data()), msg.size());
+
+        if (!subscriber_->recv(msg)) {
+            return;
+        }
+        remote_msg->sender = std::string(reinterpret_cast<char*>(msg.data()), msg.size());
+
+        if (!subscriber_->recv(msg)) {
+            return;
+        }
+        // We just move the msg instead of copy
+        remote_msg->data = std::move(msg);
+        msg.rebuild();
+
+        if (!subscriber_->recv(msg)) {
+            return;
+        }
+        remote_msg->msg_type = std::string(reinterpret_cast<char*>(msg.data()), msg.size());
+    } catch (const zmq::error_t& e) {
+        elog::error("Subscriber socket receive error: {}", e.what());
+        return;
     }
 
     std::lock_guard lock(remote_msg_mutex_);

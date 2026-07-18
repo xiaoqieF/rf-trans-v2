@@ -1,9 +1,11 @@
 #pragma once
 
+#include <condition_variable>
+#include <deque>
+#include <mutex>
 #include <string>
 #include <thread>
-#include <list>
-#include <thread>
+#include <vector>
 
 #include "zmq.hpp"
 
@@ -59,6 +61,24 @@ private:
     void onNewRegistration(const MessagePublisherInfo& pub);
     void onEndRegistration(const MessagePublisherInfo& pub);
 
+    enum class SubscriberCommandType
+    {
+        Connect,
+        Subscribe,
+        Unsubscribe,
+    };
+
+    struct SubscriberCommand
+    {
+        SubscriberCommandType type;
+        std::string value;
+        std::vector<MessagePublisherInfo> registrations;
+    };
+
+    void enqueueSubscriberCommand(SubscriberCommandType type, std::string value,
+        std::vector<MessagePublisherInfo> registrations = {});
+    void applySubscriberCommands();
+
     HandlerInfo checkHandlerInfo(const std::string& topic) const;
     SubscriberInfo checkSubscriberInfo(const std::string& topic, const std::string& msg_type) const;
 
@@ -75,11 +95,12 @@ private:
     int msg_discovery_port_{kDefaultMsgDiscoveryPort};
     int srv_discovery_port_{kDefaultSrvDiscoveryPort};
 
-    mutable std::recursive_mutex pub_sub_mutex_;
+    // Serializes a complete multipart PUB message.
+    mutable std::mutex publisher_mutex_;
     std::thread receive_msg_thread_;
 
-    TopicStorage<MessagePublisherInfo> connections_;        // keep all remote publishers
-    TopicStorage<MessagePublisherInfo> remote_subscribers_; // keep all remote subscribers
+    TopicStorage<MessagePublisherInfo> remote_publishers_;        // keep all remote publishers
+    TopicStorage<MessagePublisherInfo> remote_subscribers_;       // keep all remote subscribers
     HandlerWrapper local_subscribers_;
 
     mutable std::recursive_mutex service_mutex_;
@@ -95,6 +116,10 @@ private:
     std::unique_ptr<zmq::socket_t> subscriber_;
     std::unique_ptr<zmq::socket_t> publisher_;
     std::string my_address_;
+
+    // Discovery callbacks enqueue changes; receive_msg_thread_ owns subscriber_.
+    std::deque<SubscriberCommand> subscriber_commands_;
+    mutable std::mutex subscriber_commands_mutex_;
 
     std::unique_ptr<zmq::socket_t> requester_;
     std::unique_ptr<zmq::socket_t> response_receiver_;
