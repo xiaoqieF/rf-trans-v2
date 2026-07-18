@@ -3,3 +3,4 @@
 - [ ] Command line tools
 - [ ] Performance & benchmark
 - [ ] Remove all todos of the code
+- [ ] Shared mem inter process

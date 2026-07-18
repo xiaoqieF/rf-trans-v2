@@ -26,7 +26,6 @@ ServiceRuntime::ServiceRuntime(zmq::context_t& context, SrvDiscovery& discovery,
     std::string host_address)
     : discovery_(discovery), process_uuid_(std::move(process_uuid)), host_address_(std::move(host_address)),
       requester_(std::make_unique<zmq::socket_t>(context, ZMQ_ROUTER)),
-      response_receiver_(std::make_unique<zmq::socket_t>(context, ZMQ_ROUTER)),
       replier_(std::make_unique<zmq::socket_t>(context, ZMQ_ROUTER))
 {
 }
@@ -43,9 +42,6 @@ bool ServiceRuntime::initialize()
         const std::string endpoint = "tcp://" + host_address_ + ":*";
         const int linger = 0;
         const int mandatory = 1;
-        response_receiver_->set(zmq::sockopt::routing_id, response_receiver_uuid_);
-        response_receiver_->bind(endpoint);
-        requester_address_ = response_receiver_->get(zmq::sockopt::last_endpoint);
         replier_->set(zmq::sockopt::routing_id, replier_uuid_);
         replier_->set(zmq::sockopt::linger, linger);
         replier_->set(zmq::sockopt::router_mandatory, mandatory);
@@ -53,6 +49,7 @@ bool ServiceRuntime::initialize()
         replier_address_ = replier_->get(zmq::sockopt::last_endpoint);
         requester_->set(zmq::sockopt::linger, linger);
         requester_->set(zmq::sockopt::router_mandatory, mandatory);
+
     } catch (const zmq::error_t& e) {
         elog::error("ServiceRuntime initialization error: {}", e.what());
         return false;
@@ -63,7 +60,9 @@ bool ServiceRuntime::initialize()
 
 void ServiceRuntime::start()
 {
-    if (!initialized_ || started_) return;
+    if (!initialized_ || started_) {
+        return;
+    }
     discovery_.setConnectionCb([this](const ServicePublisherInfo& pub) { onServiceConnected(pub); });
     discovery_.setDisconnectionCb([this](const ServicePublisherInfo& pub) { onServiceDisconnected(pub); });
 
@@ -93,9 +92,9 @@ void ServiceRuntime::onServiceConnected(const ServicePublisherInfo& pub)
 {
     const auto& addr = pub.getAddr();
     std::lock_guard lock(mutex_);
-    if (std::find(connections_.begin(), connections_.end(), addr) == connections_.end()) {
+    if (!requester_connections_.count(addr)) {
         requester_->connect(addr);
-        connections_.push_back(addr);
+        requester_connections_.insert(addr);
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
     }
     IReqHandlerPtr handler;
@@ -107,7 +106,7 @@ void ServiceRuntime::onServiceConnected(const ServicePublisherInfo& pub)
 void ServiceRuntime::onServiceDisconnected(const ServicePublisherInfo& pub)
 {
     std::lock_guard lock(mutex_);
-    connections_.erase(std::remove(connections_.begin(), connections_.end(), pub.getAddr()), connections_.end());
+    requester_connections_.erase(pub.getAddr());
 }
 
 bool ServiceRuntime::advertise(const std::string& topic, const std::string& node_uuid,
@@ -173,9 +172,9 @@ void ServiceRuntime::sendPendingRequests(const std::string& topic, const std::st
     if (!found) return;
 
     std::lock_guard lock(mutex_);
-    if (std::find(connections_.begin(), connections_.end(), responder.getAddr()) == connections_.end()) {
+    if (!requester_connections_.count(responder.getAddr())) {
         requester_->connect(responder.getAddr());
-        connections_.push_back(responder.getAddr());
+        requester_connections_.insert(responder.getAddr());
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
     }
     std::map<std::string, std::map<std::string, IReqHandlerPtr>> handlers;
@@ -187,8 +186,6 @@ void ServiceRuntime::sendPendingRequests(const std::string& topic, const std::st
         try {
             sendFrame(*requester_, responder.getSocketId(), zmq::send_flags::sndmore);
             sendFrame(*requester_, topic, zmq::send_flags::sndmore);
-            sendFrame(*requester_, requester_address_, zmq::send_flags::sndmore);
-            sendFrame(*requester_, response_receiver_uuid_, zmq::send_flags::sndmore);
             sendFrame(*requester_, node_uuid, zmq::send_flags::sndmore);
             sendFrame(*requester_, request_uuid, zmq::send_flags::sndmore);
             sendFrame(*requester_, data, zmq::send_flags::sndmore);
@@ -202,25 +199,40 @@ void ServiceRuntime::sendPendingRequests(const std::string& topic, const std::st
 void ServiceRuntime::receiveLoop()
 {
     while (!exit_) {
-        zmq::pollitem_t items[] = {{*replier_, 0, ZMQ_POLLIN, 0}, {*response_receiver_, 0, ZMQ_POLLIN, 0}};
-        try { zmq::poll(items, 2, std::chrono::milliseconds(250)); } catch (...) { continue; }
-        if (items[0].revents & ZMQ_POLLIN) receiveRequest();
-        if (items[1].revents & ZMQ_POLLIN) receiveResponse();
+        zmq::pollitem_t items[] = {
+            {*replier_, 0, ZMQ_POLLIN, 0},
+            {*requester_, 0, ZMQ_POLLIN, 0}
+        };
+        try {
+            zmq::poll(items, 2, std::chrono::milliseconds(250));
+        } catch (...) {
+            continue;
+        }
+        if (items[0].revents & ZMQ_POLLIN) {
+            receiveRequest();
+        }
+        if (items[1].revents & ZMQ_POLLIN) {
+            receiveResponse();
+        }
     }
 }
 
 void ServiceRuntime::receiveRequest()
 {
     auto request = std::make_unique<RemoteRequest>();
-    std::string ignored;
     std::lock_guard lock(mutex_);
     try {
-        if (!receiveFrame(*replier_, ignored) || !receiveFrame(*replier_, request->topic) ||
-            !receiveFrame(*replier_, request->sender) || !receiveFrame(*replier_, request->dst_id) ||
+        if (!receiveFrame(*replier_, request->reply_routing_id) || !receiveFrame(*replier_, request->topic) ||
             !receiveFrame(*replier_, request->node_uuid) || !receiveFrame(*replier_, request->req_uuid) ||
             !receiveFrame(*replier_, request->req_data) || !receiveFrame(*replier_, request->req_type) ||
-            !receiveFrame(*replier_, request->rep_type)) return;
-    } catch (const zmq::error_t& e) { elog::error("Service request read error: {}", e.what()); return; }
+            !receiveFrame(*replier_, request->rep_type)) {
+                return;
+        }
+    } catch (const zmq::error_t& e) {
+        elog::error("Service request read error: {}", e.what());
+        return;
+    }
+
     std::lock_guard queue_lock(queue_mutex_);
     request_queue_.push_back(std::move(request));
     queue_cv_.notify_one();
@@ -232,10 +244,13 @@ void ServiceRuntime::receiveResponse()
     std::string ignored;
     std::lock_guard lock(mutex_);
     try {
-        if (!receiveFrame(*response_receiver_, ignored) || !receiveFrame(*response_receiver_, response->topic) ||
-            !receiveFrame(*response_receiver_, response->node_uuid) || !receiveFrame(*response_receiver_, response->req_uuid) ||
-            !receiveFrame(*response_receiver_, response->rep_data) || !receiveFrame(*response_receiver_, response->result_str)) return;
-    } catch (const zmq::error_t& e) { elog::error("Service response read error: {}", e.what()); return; }
+        if (!receiveFrame(*requester_, ignored) || !receiveFrame(*requester_, response->topic) ||
+            !receiveFrame(*requester_, response->node_uuid) || !receiveFrame(*requester_, response->req_uuid) ||
+            !receiveFrame(*requester_, response->rep_data) || !receiveFrame(*requester_, response->result_str)) return;
+    } catch (const zmq::error_t& e) {
+        elog::error("Service response read error: {}", e.what());
+        return;
+    }
     std::lock_guard queue_lock(queue_mutex_);
     response_queue_.push_back(std::move(response));
     queue_cv_.notify_one();
@@ -252,11 +267,14 @@ void ServiceRuntime::serviceHandleLoop()
             queue_cv_.wait_for(lock, 500ms, [this] {
                 return !request_queue_.empty() || !response_queue_.empty() || exit_;
             });
-            if (exit_) return;
+            if (exit_) {
+                return;
+            }
             requests.swap(request_queue_);
             responses.swap(response_queue_);
         }
-        handleRequests(requests); handleResponses(responses);
+        handleRequests(requests);
+        handleResponses(responses);
     }
 }
 
@@ -267,19 +285,18 @@ void ServiceRuntime::handleRequests(const std::deque<std::unique_ptr<RemoteReque
         if (!response_handlers_.getFirstHandler(request->topic, request->req_type, request->rep_type, handler)) continue;
         std::string reply_data;
         const std::string result = handler->runCallback(request->req_data, reply_data) ? "1" : "0";
+
         std::lock_guard lock(mutex_);
-        if (std::find(connections_.begin(), connections_.end(), request->sender) == connections_.end()) {
-            replier_->connect(request->sender); connections_.push_back(request->sender);
-            std::this_thread::sleep_for(std::chrono::milliseconds(100));
-        }
         try {
-            sendFrame(*replier_, request->dst_id, zmq::send_flags::sndmore);
+            sendFrame(*replier_, request->reply_routing_id, zmq::send_flags::sndmore);
             sendFrame(*replier_, request->topic, zmq::send_flags::sndmore);
             sendFrame(*replier_, request->node_uuid, zmq::send_flags::sndmore);
             sendFrame(*replier_, request->req_uuid, zmq::send_flags::sndmore);
             sendFrame(*replier_, reply_data, zmq::send_flags::sndmore);
             sendFrame(*replier_, result, zmq::send_flags::none);
-        } catch (const zmq::error_t& e) { elog::error("Service response send error: {}", e.what()); }
+        } catch (const zmq::error_t& e) {
+            elog::error("Service response send error: {}", e.what());
+        }
     }
 }
 

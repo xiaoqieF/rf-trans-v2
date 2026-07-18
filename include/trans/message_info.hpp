@@ -38,12 +38,11 @@ struct RemoteMsg
 
 struct RemoteRequest
 {
+    std::string reply_routing_id;
     std::string topic;
-    std::string sender;
     std::string node_uuid;
     std::string req_uuid;
     std::string req_data;
-    std::string dst_id;
     std::string req_type;
     std::string rep_type;
 };

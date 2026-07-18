@@ -7,6 +7,7 @@
 #include <mutex>
 #include <string>
 #include <thread>
+#include <unordered_set>
 #include <vector>
 
 #include "zmq.hpp"
@@ -47,7 +48,6 @@ public:
 
     const std::string& replierAddress() const { return replier_address_; }
     const std::string& replierId() const { return replier_uuid_; }
-    const std::string& responseReceiverId() const { return response_receiver_uuid_; }
 
 private:
     void onServiceConnected(const ServicePublisherInfo& pub);
@@ -66,17 +66,14 @@ private:
     SrvDiscovery& discovery_;
     const std::string process_uuid_;
     const std::string host_address_;
-    const std::string response_receiver_uuid_{generateUuidV4()};
     const std::string replier_uuid_{generateUuidV4()};
 
     std::unique_ptr<zmq::socket_t> requester_;
-    std::unique_ptr<zmq::socket_t> response_receiver_;
     std::unique_ptr<zmq::socket_t> replier_;
-    std::string requester_address_;
     std::string replier_address_;
 
     mutable std::recursive_mutex mutex_;
-    std::vector<std::string> connections_;
+    std::unordered_set<std::string> requester_connections_;
     HandlerStorage<IRepHandler> response_handlers_;
     HandlerStorage<IReqHandler> request_handlers_;
 
