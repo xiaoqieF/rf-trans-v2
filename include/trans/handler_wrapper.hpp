@@ -20,7 +20,7 @@ public:
 private:
     HandlerStorage<ISubscriptionHandler> normal_;
 
-    friend class NodeShared;
+    friend class MessageRuntime;
 };
 
 struct HandlerInfo

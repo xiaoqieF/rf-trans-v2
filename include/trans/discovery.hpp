@@ -36,6 +36,7 @@ public:
     virtual ~Discovery();
 
     void start();
+    void stop();
 
     bool advertise(const Pub& publisher);
     bool unadvertise(const std::string& topic, const std::string& node_uuid);
@@ -218,10 +219,7 @@ Discovery<Pub>::Discovery(const std::string& process_uuid,
 template<typename Pub>
 Discovery<Pub>::~Discovery()
 {
-    exit_ = true;
-    if (discover_loop_thread_.joinable()) {
-        discover_loop_thread_.join();
-    }
+    stop();
 
     sendMsg(msgs::Discovery::BYE, PublisherInfo("", "", process_uuid_, "", AdvertiseOptions{}));
 
@@ -478,6 +476,16 @@ void Discovery<Pub>::start()
 
     discover_loop_thread_ = std::thread(&Discovery::loop, this);
     pthread_setname_np(discover_loop_thread_.native_handle(), "discovery_loop");
+}
+
+template<typename Pub>
+void Discovery<Pub>::stop()
+{
+    exit_ = true;
+    enabled_ = false;
+    if (discover_loop_thread_.joinable()) {
+        discover_loop_thread_.join();
+    }
 }
 
 template<typename Pub>
