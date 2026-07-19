@@ -12,10 +12,10 @@
 
 #include "zmq.hpp"
 
-#include "trans/discovery.hpp"
-#include "trans/handler_storage.hpp"
-#include "trans/rep_handler.hpp"
-#include "trans/req_handler.hpp"
+#include "trans/details/discovery.hpp"
+#include "trans/details/handler_storage.hpp"
+#include "trans/details/rep_handler.hpp"
+#include "trans/details/req_handler.hpp"
 
 namespace rf
 {

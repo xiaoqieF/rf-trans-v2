@@ -4,7 +4,7 @@
 
 #include "trans/node.hpp"
 #include "trans/publisher.hpp"
-#include "trans/node_shared.hpp"
+#include "trans/details/node_shared.hpp"
 
 namespace rf
 {
@@ -17,6 +17,7 @@ struct Node::NodePrivate
     std::string node_uuid;
     NodeShared& node_shared;
     std::unordered_set<std::string> subscribed_topics;
+    std::unordered_set<std::string> advertised_topics;
     std::unordered_set<std::string> advertised_srvs;
 };
 
@@ -29,6 +30,13 @@ Node::~Node()
     auto sub_topics = impl_->subscribed_topics;
     for (const auto& topic : sub_topics) {
         unsubscribe(topic);
+    }
+
+    auto adv_topics = impl_->advertised_topics;
+    for (const auto& topic : adv_topics) {
+        if (!unadvertise(topic)) {
+            elog::error("Node::~Node(): Error unadvertising topic: {}", topic);
+        }
     }
 
     auto adv_srvs = impl_->advertised_srvs;
@@ -78,9 +86,20 @@ bool Node::unsubscribe(const std::string& topic)
     return true;
 }
 
+bool Node::unadvertise(const std::string& topic)
+{
+    impl_->advertised_topics.erase(topic);
+    return getNodeShared().unadvertiseMessage(topic, getNodeUuid());
+}
+
 std::unordered_set<std::string>& Node::topicsSubscribed()
 {
     return impl_->subscribed_topics;
+}
+
+std::unordered_set<std::string>& Node::topicsAdvertised()
+{
+    return impl_->advertised_topics;
 }
 
 std::unordered_set<std::string>& Node::servicesAdvertised()

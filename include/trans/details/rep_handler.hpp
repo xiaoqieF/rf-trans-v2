@@ -2,8 +2,8 @@
 
 #include "elog/elog.h"
 
-#include "trans/helpers.hpp"
-#include "trans/trans_types.hpp"
+#include "trans/details/helpers.hpp"
+#include "trans/details/trans_types.hpp"
 
 namespace rf
 {

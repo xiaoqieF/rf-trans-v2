@@ -119,4 +119,4 @@ subscriber_->set(zmq::sockopt::subscribe, topic);
 - 默认 `3000 ms` 未收到某进程任何发现消息，就删除该进程的发布者记录并触发断开回调。
 - `Discovery` 析构时发送 `BYE`，可让其他进程尽快清理其发布与订阅相关状态。
 
-这些默认值定义在 [include/trans/discovery.hpp](../include/trans/discovery.hpp#L86)。因此即使启动顺序使首次 `ADVERTISE` 或 `SUBSCRIBE` 没有形成匹配，后续重播的 `ADVERTISE` 也会让订阅端恢复发现。
+这些默认值定义在 [include/trans/details/discovery.hpp](../include/trans/details/discovery.hpp#L86)。因此即使启动顺序使首次 `ADVERTISE` 或 `SUBSCRIBE` 没有形成匹配，后续重播的 `ADVERTISE` 也会让订阅端恢复发现。

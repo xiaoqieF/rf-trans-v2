@@ -7,7 +7,7 @@
 #include <chrono>
 
 #include "google/protobuf/message.h"
-#include "trans/message_info.hpp"
+#include "trans/details/message_info.hpp"
 
 namespace rf
 {

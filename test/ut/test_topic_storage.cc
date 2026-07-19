@@ -4,8 +4,8 @@
 #include <gtest/gtest.h>
 
 #include "trans/advertise_options.hpp"
-#include "trans/topic_storage.hpp"
-#include "trans/publisher_info.hpp"
+#include "trans/details/topic_storage.hpp"
+#include "trans/details/publisher_info.hpp"
 #include "msgs/example.pb.h"
 
 

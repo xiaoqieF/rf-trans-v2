@@ -1,8 +1,8 @@
-#include "trans/node_shared.hpp"
+#include "trans/details/node_shared.hpp"
 
-#include "trans/discovery.hpp"
-#include "trans/message_runtime.hpp"
-#include "trans/service_runtime.hpp"
+#include "trans/details/discovery.hpp"
+#include "trans/details/message_runtime.hpp"
+#include "trans/details/service_runtime.hpp"
 
 namespace rf
 {
@@ -49,6 +49,11 @@ NodeShared::~NodeShared()
 bool NodeShared::unsubscribe(const std::string& topic, const std::string& node_uuid)
 {
     return message_runtime_->unsubscribe(topic, node_uuid);
+}
+
+bool NodeShared::unadvertiseMessage(const std::string& topic, const std::string& node_uuid)
+{
+    return message_runtime_->unadvertise(topic, node_uuid);
 }
 
 bool NodeShared::advertiseMessage(const std::string& topic, const std::string& node_uuid,

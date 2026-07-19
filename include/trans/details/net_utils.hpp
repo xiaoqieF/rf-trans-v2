@@ -14,7 +14,7 @@
 #include <netdb.h>
 
 #include "elog/elog.h"
-#include "trans/helpers.hpp"
+#include "trans/details/helpers.hpp"
 
 namespace rf
 {

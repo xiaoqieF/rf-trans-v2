@@ -55,11 +55,11 @@ cmake --build build -j
 
 ```text
 build/librf-trans.a
-build/test/test_pub
-build/test/test_sub
-build/test/test_request
-build/test/test_response
-build/test/test_discovery
+build/test/examples/example_pub
+build/test/examples/example_sub
+build/test/examples/example_request
+build/test/examples/example_response
+build/test/examples/example_discovery
 ```
 
 启用单元测试时，CMake 会通过 `FetchContent` 下载 GoogleTest，因此首次配置需要能访问 GitHub：
@@ -150,17 +150,38 @@ client.request<rf::msgs::ExampleMsg, rf::msgs::ExampleMsg>("/echo", request,
 - 与上述两种服务对应的 `request()` 重载会自动使用 `rf::msgs::Empty`。
 - `waitForService(topic, timeout)` 可在请求前等待本地或远端服务被发现。
 
-完整的可执行示例见 `test/test_pub.cc`、`test/test_sub.cc`、`test/test_response.cc` 和 `test/test_request.cc`。构建后可在不同终端运行，例如：
+完整的可执行示例见 `test/examples/`。构建后可在不同终端运行，例如：
 
 ```bash
-./build/test/test_sub
-./build/test/test_pub
+./build/test/examples/example_sub
+./build/test/examples/example_pub
 ```
+
+## 性能基准
+
+性能基准位于 `test/benchmark/`，使用 Google Benchmark。默认不构建，避免常规构建增加依赖；开启后会优先使用系统安装的 Google Benchmark，不存在时由 CMake 下载 v1.8.3。
+
+```bash
+cmake -S . -B build-benchmark -DBUILD_TESTING=OFF -DBUILD_BENCHMARKS=ON -DCMAKE_BUILD_TYPE=Release
+cmake --build build-benchmark -j
+./build-benchmark/test/benchmark/benchmark_pubsub_service \
+  --benchmark_repetitions=10 --benchmark_report_aggregates_only=true
+```
+
+基准使用进程内端点，以隔离库本身的数据路径并避免网络、组播发现和启动时间干扰结果。每种负载分别测试 32 B、1 KiB 和 64 KiB 的 `ExampleMsg` payload：
+
+- `BM_PubSubEndToEndLatency`：单个在途消息从 `publish()` 到订阅回调完成的延迟。
+- `BM_PubSubSustainedThroughput`：128 条一批的发布订阅吞吐，计时至该批回调全部完成。
+- `BM_ServiceLocalRoundTrip`：请求、服务处理器和响应回调的本地往返延迟。
+
+消息对象构造、端点创建、连接就绪检查和销毁不计入计时。跨进程或跨主机的结果还会受网络、组播和 ZeroMQ 连接状态影响，应由独立的部署级压测采集。
+
+启用 `BUILD_BENCHMARKS` 时，单配置生成器会强制使用 `Release`；对 Visual Studio、Xcode 等多配置生成器，请使用 `cmake --build build-benchmark --config Release`。
 
 ## 网络与部署注意事项
 
 - 自动发现依赖 IPv4 UDP 组播。跨主机运行时，主机、防火墙、容器网络和交换机必须允许组播流量及动态分配的 TCP 端口。
-- Discovery 和 TCP endpoint 使用同一张网卡。默认选择枚举到的第一个可用 IPv4 组播地址；多网卡、VPN 或容器环境应设置 `RF_HOST_IP` 指定可达的本机 IPv4 地址，例如：`RF_HOST_IP=192.168.1.10 ./build/test/test_pub`。
+- Discovery 和 TCP endpoint 使用同一张网卡。默认选择枚举到的第一个可用 IPv4 组播地址；多网卡、VPN 或容器环境应设置 `RF_HOST_IP` 指定可达的本机 IPv4 地址，例如：`RF_HOST_IP=192.168.1.10 ./build/test/examples/example_pub`。
 - 若组播不可用，远端自动发现和通信无法建立；同一进程内的发布订阅和服务调用不依赖远端发现。
 - `Scope::PROCESS` 不向其他进程广播，`Scope::HOST` 仅允许来自所选网卡或 loopback 的本机发现，`Scope::ALL` 允许网络内发现；同机进程应使用一致的 `RF_HOST_IP` 配置。
 - topic 字符串和 Protobuf 全限定类型名共同参与匹配；同名 topic 上类型不一致的消息或服务不会作为匹配端点使用。
@@ -168,10 +189,12 @@ client.request<rf::msgs::ExampleMsg, rf::msgs::ExampleMsg>("/echo", request,
 ## 目录说明
 
 ```text
-include/trans/  对外 C++ 接口及大部分模板实现
+include/trans/  对外 C++ 接口（node、publisher 和 advertise options）
+include/trans/details/  内部运行时、发现机制和模板实现
 src/            Node、Publisher 和共享运行时实现
 msgs/           Discovery 协议与示例 Protobuf 消息
-test/           可执行通信示例
+test/examples/  可执行通信示例
+test/benchmark/ 发布订阅与服务基准
 test/ut/        GoogleTest 单元测试
 deps/elog/      随源码附带的日志库
 todo.md         后续计划

@@ -4,12 +4,13 @@
 #include <string>
 
 #include "trans/publisher.hpp"
-#include "trans/publisher_info.hpp"
-#include "trans/trans_types.hpp"
 #include "trans/advertise_options.hpp"
-#include "trans/subscription_handler.hpp"
-#include "trans/req_handler.hpp"
-#include "trans/rep_handler.hpp"
+#include "trans/details/node_shared.hpp"
+#include "trans/details/publisher_info.hpp"
+#include "trans/details/rep_handler.hpp"
+#include "trans/details/req_handler.hpp"
+#include "trans/details/subscription_handler.hpp"
+#include "trans/details/trans_types.hpp"
 
 #include "msgs/empty.pb.h"
 
@@ -30,6 +31,7 @@ public:
     bool subscribe(const std::string& topic, std::function<void(const std::shared_ptr<const MessageT>&)> callback);
 
     bool unsubscribe(const std::string& topic);
+    bool unadvertise(const std::string& topic);
 
     // Advertise service with request and reply
     template<typename RequestT, typename ReplyT>
@@ -84,6 +86,7 @@ public:
 private:
     NodeShared& getNodeShared() const;
     std::unordered_set<std::string>& topicsSubscribed();
+    std::unordered_set<std::string>& topicsAdvertised();
     std::unordered_set<std::string>& servicesAdvertised();
 
 private:
@@ -97,8 +100,7 @@ Publisher Node::advertise(const std::string& topic, const AdvertiseMessageOption
     static_assert(std::is_base_of_v<google::protobuf::Message, MessageT>,
         "MessageT must be derived from google::protobuf::Message");
     auto msg_type = MessageT::descriptor()->full_name();
-    auto current_topics = getAdvertisedTopics();
-    if (std::find(current_topics.begin(), current_topics.end(), topic) != current_topics.end()) {
+    if (topicsAdvertised().count(topic)) {
         elog::error("Topic [{}] already advertised. You cannot advertise the same topic on the same node.");
         return Publisher{};
     }
@@ -109,6 +111,7 @@ Publisher Node::advertise(const std::string& topic, const AdvertiseMessageOption
         return Publisher{};
     }
 
+    topicsAdvertised().insert(topic);
     return Publisher(pub);
 }
 

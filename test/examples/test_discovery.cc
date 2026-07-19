@@ -1,7 +1,7 @@
 #include <random>
 
 #include "elog/elog.h"
-#include "trans/discovery.hpp"
+#include "trans/details/discovery.hpp"
 
 using namespace std::chrono_literals;
 

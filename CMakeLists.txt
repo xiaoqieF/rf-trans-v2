@@ -5,6 +5,15 @@ project(rf-trans)
 add_compile_options(-std=c++17 -Wall -Wextra -Wno-unused-parameter -Wno-unused-variable -O2)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
+option(BUILD_TESTING "Enable unit tests" ON)
+option(BUILD_BENCHMARKS "Build benchmark executables" OFF)
+
+if(BUILD_BENCHMARKS AND NOT CMAKE_CONFIGURATION_TYPES)
+    # Performance measurements must not use Debug instrumentation or assertions.
+    set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type" FORCE)
+    set_property(CACHE CMAKE_BUILD_TYPE PROPERTY STRINGS Debug Release RelWithDebInfo MinSizeRel)
+endif()
+
 
 find_package(Protobuf REQUIRED)
 find_package(PkgConfig REQUIRED)
@@ -46,8 +55,6 @@ target_link_libraries(rf-trans PRIVATE
 )
 
 add_subdirectory(test)
-
-option(BUILD_TESTING "Enable tests" ON)
 
 if(BUILD_TESTING)
     enable_testing()

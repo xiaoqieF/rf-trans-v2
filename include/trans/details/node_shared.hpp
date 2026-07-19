@@ -7,8 +7,8 @@
 
 #include "zmq.hpp"
 
-#include "trans/discovery.hpp"
-#include "trans/trans_types.hpp"
+#include "trans/details/discovery.hpp"
+#include "trans/details/trans_types.hpp"
 
 namespace rf
 {
@@ -25,6 +25,7 @@ public:
     NodeShared& operator=(const NodeShared&) = delete;
 
     bool unsubscribe(const std::string& topic, const std::string& node_uuid);
+    bool unadvertiseMessage(const std::string& topic, const std::string& node_uuid);
     bool advertiseMessage(const std::string& topic, const std::string& node_uuid,
         const std::string& msg_type, const AdvertiseMessageOptions& options,
         MessagePublisherInfo& publisher);

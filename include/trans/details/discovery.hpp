@@ -16,11 +16,11 @@
 #include <zmq.hpp>
 
 #include "msgs/discovery.pb.h"
-#include "trans/msgs.hpp"
-#include "trans/net_utils.hpp"
-#include "trans/trans_types.hpp"
-#include "trans/publisher_info.hpp"
-#include "trans/topic_storage.hpp"
+#include "trans/details/msgs.hpp"
+#include "trans/details/net_utils.hpp"
+#include "trans/details/trans_types.hpp"
+#include "trans/details/publisher_info.hpp"
+#include "trans/details/topic_storage.hpp"
 
 namespace rf
 {
@@ -709,7 +709,9 @@ void Discovery<Pub>::updateHeartbeat()
 
     for (const auto& topic : nodes) {
         for (const auto& node : topic.second) {
-            sendMsg(msgs::Discovery::ADVERTISE, node);
+            if (node.getOptions().getScope() != Scope::PROCESS) {
+                sendMsg(msgs::Discovery::ADVERTISE, node);
+            }
         }
     }
 

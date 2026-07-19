@@ -1,0 +1,11 @@
+function(add_trans_example name source)
+    add_executable(example_${name} ${source})
+    target_include_directories(example_${name} PRIVATE ${CMAKE_SOURCE_DIR}/include)
+    target_link_libraries(example_${name} PRIVATE rf-trans)
+endfunction()
+
+add_trans_example(discovery test_discovery.cc)
+add_trans_example(pub test_pub.cc)
+add_trans_example(sub test_sub.cc)
+add_trans_example(request test_request.cc)
+add_trans_example(response test_response.cc)

@@ -1,4 +1,4 @@
-#include "trans/message_runtime.hpp"
+#include "trans/details/message_runtime.hpp"
 
 namespace rf
 {
@@ -189,6 +189,11 @@ bool MessageRuntime::unsubscribe(const std::string& topic, const std::string& no
     }
 
     return true;
+}
+
+bool MessageRuntime::unadvertise(const std::string& topic, const std::string& node_uuid)
+{
+    return discovery_.unadvertise(topic, node_uuid);
 }
 
 bool MessageRuntime::advertise(const std::string& topic, const std::string& node_uuid,

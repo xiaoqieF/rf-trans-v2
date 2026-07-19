@@ -5,9 +5,9 @@
 
 #include "elog/elog.h"
 
-#include "trans/trans_types.hpp"
-#include "trans/helpers.hpp"
-#include "trans/message_info.hpp"
+#include "trans/details/trans_types.hpp"
+#include "trans/details/helpers.hpp"
+#include "trans/details/message_info.hpp"
 
 namespace rf
 {

@@ -1,4 +1,4 @@
-#include "trans/publisher_info.hpp"
+#include "trans/details/publisher_info.hpp"
 
 namespace rf
 {

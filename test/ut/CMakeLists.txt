@@ -31,3 +31,9 @@ target_include_directories(test_discovery_init PRIVATE ${GTEST_INCLUDE_DIRS})
 target_link_libraries(test_discovery_init PRIVATE rf-trans GTest::gtest GTest::gtest_main pthread)
 
 add_test(NAME test_discovery_init COMMAND test_discovery_init)
+
+add_executable(test_node_lifecycle test_node_lifecycle.cc)
+target_include_directories(test_node_lifecycle PRIVATE ${GTEST_INCLUDE_DIRS})
+target_link_libraries(test_node_lifecycle PRIVATE rf-trans GTest::gtest GTest::gtest_main pthread)
+
+add_test(NAME test_node_lifecycle COMMAND test_node_lifecycle)

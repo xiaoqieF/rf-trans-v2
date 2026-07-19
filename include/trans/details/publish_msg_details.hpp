@@ -1,8 +1,8 @@
 #pragma once
 
-#include "trans/subscription_handler.hpp"
-#include "trans/trans_types.hpp"
-#include "trans/message_info.hpp"
+#include "trans/details/subscription_handler.hpp"
+#include "trans/details/trans_types.hpp"
+#include "trans/details/message_info.hpp"
 
 namespace rf
 {

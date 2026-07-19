@@ -12,10 +12,10 @@
 
 #include "zmq.hpp"
 
-#include "trans/discovery.hpp"
-#include "trans/handler_wrapper.hpp"
-#include "trans/publish_msg_details.hpp"
-#include "trans/trans_types.hpp"
+#include "trans/details/discovery.hpp"
+#include "trans/details/handler_wrapper.hpp"
+#include "trans/details/publish_msg_details.hpp"
+#include "trans/details/trans_types.hpp"
 
 namespace rf
 {
@@ -35,6 +35,7 @@ public:
     void stop();
 
     bool unsubscribe(const std::string& topic, const std::string& node_uuid);
+    bool unadvertise(const std::string& topic, const std::string& node_uuid);
     bool advertise(const std::string& topic, const std::string& node_uuid,
         const std::string& msg_type, const AdvertiseMessageOptions& options,
         MessagePublisherInfo& publisher);

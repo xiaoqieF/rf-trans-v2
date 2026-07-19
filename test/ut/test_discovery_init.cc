@@ -2,7 +2,7 @@
 
 #include <gtest/gtest.h>
 
-#include "trans/discovery.hpp"
+#include "trans/details/discovery.hpp"
 
 namespace rf
 {

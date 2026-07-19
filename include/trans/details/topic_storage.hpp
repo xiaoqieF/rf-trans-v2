@@ -8,8 +8,8 @@
 #include <vector>
 
 #include "elog/elog.h"
-#include "trans/trans_types.hpp"
-#include "trans/publisher_info.hpp"
+#include "trans/details/trans_types.hpp"
+#include "trans/details/publisher_info.hpp"
 
 namespace rf
 {

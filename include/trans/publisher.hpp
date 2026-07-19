@@ -1,6 +1,6 @@
 #pragma once
 
-#include "trans/node_shared.hpp"
+#include "trans/details/node_shared.hpp"
 
 namespace rf
 {
