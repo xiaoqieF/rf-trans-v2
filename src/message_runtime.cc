@@ -124,7 +124,6 @@ void MessageRuntime::onPublisherConnected(const MessagePublisherInfo& pub)
     }
 
     if (!remote_publishers_.hasPublisher(addr)) {
-        elog::debug("Connect to pub.");
         enqueueSubscriberCommand(SubscriberCommandType::Connect, addr);
     }
 
@@ -139,7 +138,7 @@ void MessageRuntime::onPublisherDisconnected(const MessagePublisherInfo& pub)
     const std::string remote_proc_uuid = pub.getProcessUuid();
     const std::string node_uuid = pub.getNodeUuid();
 
-    elog::debug("New disconnection detected, process_uuid: {}", remote_proc_uuid);
+    // elog::debug("New disconnection detected, process_uuid: {}", remote_proc_uuid);
     if (topic.empty() && node_uuid.empty()) {
         remote_subscribers_.delPublishersByProc(remote_proc_uuid);
         remote_publishers_.delPublishersByProc(remote_proc_uuid);

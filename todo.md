@@ -1,6 +1,3 @@
-- [ ] Try to get MsgTypeName in compile time
 - [ ] Python bind
 - [ ] Command line tools
-- [ ] Performance & benchmark
-- [ ] Remove all todos of the code
 - [ ] Shared mem inter process

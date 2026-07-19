@@ -566,10 +566,12 @@ void Discovery<Pub>::dispatchDiscoveryMsg(const std::string& from_ip, char* msg,
         unregister_cb = unregistration_cb_;
     }
 
+#if 0
     if (discovery_msg.type() != msgs::Discovery::HEARTBEAT) {
         elog::trace("Handle msg: {}, topic: \"{}\"", msgs::toString(discovery_msg.type()),
             discovery_msg.has_pub() ? discovery_msg.pub().topic() : discovery_msg.sub().topic());
     }
+#endif
     switch (discovery_msg.type()) {
         case msgs::Discovery::ADVERTISE:
         {

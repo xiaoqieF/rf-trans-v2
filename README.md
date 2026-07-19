@@ -168,13 +168,15 @@ cmake --build build-benchmark -j
   --benchmark_repetitions=10 --benchmark_report_aggregates_only=true
 ```
 
-基准使用进程内端点，以隔离库本身的数据路径并避免网络、组播发现和启动时间干扰结果。每种负载分别测试 32 B、1 KiB 和 64 KiB 的 `ExampleMsg` payload：
+每种负载分别测试 32 B、1 KiB 和 64 KiB 的 `ExampleMsg` payload：
 
 - `BM_PubSubEndToEndLatency`：单个在途消息从 `publish()` 到订阅回调完成的延迟。
 - `BM_PubSubSustainedThroughput`：128 条一批的发布订阅吞吐，计时至该批回调全部完成。
 - `BM_ServiceLocalRoundTrip`：请求、服务处理器和响应回调的本地往返延迟。
+- `BM_PubSubInterprocessEndToEndLatency`：基准程序自动启动同机订阅端子进程后，从 `publish()` 到远端订阅回调确认的端到端延迟。
+- `BM_ServiceInterprocessRoundTrip`：基准程序自动启动同机服务端子进程后，客户端到远端服务端再返回客户端的往返延迟。
 
-消息对象构造、端点创建、连接就绪检查和销毁不计入计时。跨进程或跨主机的结果还会受网络、组播和 ZeroMQ 连接状态影响，应由独立的部署级压测采集。
+前三项使用进程内端点，以隔离库本身的数据路径。两个跨进程基准会在计时前完成子进程启动、UDP 组播发现、ZeroMQ 连接和一次预热通信；计时区间仅包含一次消息或服务请求及已校验的远端确认。它们需要同机进程可使用 UDP 组播发现，必要时为运行基准的进程设置可达的 `RF_HOST_IP`。消息对象构造、端点创建、连接就绪检查和销毁不计入计时。
 
 启用 `BUILD_BENCHMARKS` 时，单配置生成器会强制使用 `Release`；对 Visual Studio、Xcode 等多配置生成器，请使用 `cmake --build build-benchmark --config Release`。
 
