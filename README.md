@@ -1,8 +1,8 @@
-# rf-trans
+# rf_trans
 
-`rf-trans` 是一个基于 C++17、Protocol Buffers 和 ZeroMQ 的轻量级进程间通信库。它将消息和服务以主题（topic）组织，通过 UDP 组播自动发现同一网络中的端点，并在本机或远端透明地分发数据。
+`rf_trans` 是一个基于 C++17、Protocol Buffers 和 ZeroMQ 的轻量级进程间通信库。它将消息和服务以主题（topic）组织，通过 UDP 组播自动发现同一网络中的端点，并在本机或远端透明地分发数据。
 
-项目当前提供库目标 `rf-trans`，以及位于 `test/` 下的发布订阅、服务调用和发现示例。它还没有安装规则、命令行工具或 Python 绑定。
+项目提供库目标 `rf_trans`，以及位于 `test/` 下的发布订阅、服务调用和发现示例。它提供 CMake 安装和 `find_package()` 集成，但没有命令行工具或 Python 绑定。
 
 ## 已实现的能力
 
@@ -51,10 +51,30 @@ cmake -S . -B build -DBUILD_TESTING=OFF
 cmake --build build -j
 ```
 
+### 安装并供其他 CMake 项目使用
+
+默认可安装到系统前缀，也可指定一个用户可写前缀：
+
+```bash
+cmake -S . -B build -DBUILD_TESTING=OFF -DCMAKE_INSTALL_PREFIX=$HOME/.local
+cmake --build build -j
+cmake --install build
+```
+
+安装内容包括 `rf_trans` 库、公共头文件、内置 `elog` 头文件、构建期生成的 Protobuf 消息头文件和原始 `.proto` 定义。下游项目通过安装前缀查找并链接命名空间 target：
+
+```cmake
+find_package(rf_trans CONFIG REQUIRED)
+
+target_link_libraries(my_application PRIVATE rf_trans::rf_trans)
+```
+
+若安装前缀不在 CMake 的默认搜索路径中，在配置消费者项目时传入 `-DCMAKE_PREFIX_PATH=$HOME/.local`。包配置会自动查找 Protobuf、`pkg-config`、ZeroMQ 和线程库；消费者仍需安装这些系统依赖以及提供 `zmq.hpp` 的 cppzmq 开发包。
+
 生成的目标包括：
 
 ```text
-build/librf-trans.a
+build/librf_trans.a
 build/test/examples/example_pub
 build/test/examples/example_sub
 build/test/examples/example_request
@@ -204,4 +224,4 @@ todo.md         后续计划
 
 ## 当前边界
 
-项目仍处于开发阶段。`todo.md` 中列出了 Python 绑定、命令行工具、性能基准和清理待办等计划；目前 CMake 也尚未提供 `install()` / `find_package()` 集成。将其嵌入其他项目时，建议先通过 `add_subdirectory()` 引入，并确保消费者能找到构建目录生成的 `msgs/*.pb.h` 文件。
+项目仍处于开发阶段。`todo.md` 中列出了 Python 绑定、命令行工具、性能基准和清理待办等计划。通过源码方式集成时可使用 `add_subdirectory()` 并链接 `rf_trans::rf_trans`；已安装的包则使用 `find_package(rf_trans CONFIG REQUIRED)`。

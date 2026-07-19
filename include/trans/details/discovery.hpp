@@ -63,11 +63,6 @@ public:
     void setRegistrationCb(const DiscoveryCallback<Pub>& cb);
     void setUnregistrationCb(const DiscoveryCallback<Pub>& cb);
 
-    [[deprecated("Use setRegistrationCb instead.")]]
-    void setRegisterationCb(const DiscoveryCallback<Pub>& cb) { setRegistrationCb(cb); }
-    [[deprecated("Use setUnregistrationCb instead.")]]
-    void setUnregisterationCb(const DiscoveryCallback<Pub>& cb) { setUnregistrationCb(cb); }
-
     void printCurrentState() const;
 
 private:

@@ -13,13 +13,13 @@ if(NOT TARGET benchmark::benchmark)
 endif()
 
 add_executable(benchmark_service_server benchmark_service_server.cc)
-target_link_libraries(benchmark_service_server PRIVATE rf-trans pthread)
+target_link_libraries(benchmark_service_server PRIVATE rf_trans pthread)
 
 add_executable(benchmark_pubsub_subscriber benchmark_pubsub_subscriber.cc)
-target_link_libraries(benchmark_pubsub_subscriber PRIVATE rf-trans pthread)
+target_link_libraries(benchmark_pubsub_subscriber PRIVATE rf_trans pthread)
 
 add_executable(benchmark_pubsub_service benchmark_pubsub_service.cc)
-target_link_libraries(benchmark_pubsub_service PRIVATE rf-trans benchmark::benchmark pthread)
+target_link_libraries(benchmark_pubsub_service PRIVATE rf_trans benchmark::benchmark pthread)
 target_compile_definitions(benchmark_pubsub_service PRIVATE
     RF_TRANS_BENCHMARK_SERVICE_SERVER_PATH=\"$<TARGET_FILE:benchmark_service_server>\"
     RF_TRANS_BENCHMARK_SUBSCRIBER_PATH=\"$<TARGET_FILE:benchmark_pubsub_subscriber>\"
