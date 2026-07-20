@@ -154,7 +154,7 @@ void MessageRuntime::onSubscriberRegistered(const MessagePublisherInfo& pub)
         return;
     }
 
-    elog::debug("Registering a new remote connection.\n\t Proc uuid: {}\n\t Node uuid: {}",
+    elog::info("Registering a new remote connection.\n\t Proc uuid: {}\n\t Node uuid: {}",
         pub.getProcessUuid(), pub.getNodeUuid());
     remote_subscribers_.addPublisher(pub);
 }
@@ -165,7 +165,7 @@ void MessageRuntime::onSubscriberUnregistered(const MessagePublisherInfo& pub)
         return;
     }
 
-    elog::debug("EndRegistering a remote connection.\n\t Proc uuid: {}\n\t Node uuid: {}",
+    elog::info("Unregistering a remote connection.\n\t Proc uuid: {}\n\t Node uuid: {}",
         pub.getProcessUuid(), pub.getNodeUuid());
     remote_subscribers_.delPublishersByNode(pub.getTopic(), pub.getProcessUuid(), pub.getNodeUuid());
 }

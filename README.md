@@ -173,9 +173,26 @@ client.request<rf::msgs::ExampleMsg, rf::msgs::ExampleMsg>("/echo", request,
 完整的可执行示例见 `test/examples/`。构建后可在不同终端运行，例如：
 
 ```bash
-./build/test/examples/example_sub
 ./build/test/examples/example_pub
+./build/test/examples/example_sub
 ```
+
+### 多 topic 发布订阅观测示例
+
+`example_pub` 和 `example_sub` 共同演示四个独立 topic 的发现、连接、发布、接收和取消订阅：
+
+```text
+/examples/multi_topic/temperature
+/examples/multi_topic/pressure
+/examples/multi_topic/heartbeat
+/examples/multi_topic/diagnostics
+```
+
+先运行 `example_pub`，再运行 `example_sub`。两个程序会持续运行，直到收到 `Ctrl+C`（或 `SIGTERM`）。订阅端同时订阅全部四个 topic；发布端仅在对应 topic 有订阅连接时发送，因此可以长期作为 CLI 的发现和端点信息观测对象。
+
+两个程序都输出可检索的键值行，方便人工观察或与未来 CLI 的端点信息对照：`PUB_TOPIC` / `SUB_TOPIC` 列出声明或订阅的 topic，`PUB_CONNECTED` / `PUB_DISCONNECTED` 展示每个 topic 的连接生命周期，`PUB_STATUS` 与 `SUB_STATUS` 分别展示连接状态、已发送数和已接收数。订阅端完成初始检查后输出 `SUB_CHECK status=passed`；收到退出信号后，两个程序分别以 `PUB_RESULT status=stopped` 和 `SUB_RESULT status=stopped` 结束。
+
+订阅端会验证每个 topic 都及时收到足量消息、消息序列严格递增，以及负载中的 topic 名称没有串线。检查失败只会报告 `SUB_CHECK status=failed`，程序仍会持续运行，便于排查后续状态。
 
 ## 性能基准
 

@@ -1,4 +1,6 @@
+#include <array>
 #include <chrono>
+#include <csignal>
 #include <iostream>
 #include <memory>
 #include <string>
@@ -13,92 +15,108 @@ using namespace rf::trans;
 
 namespace
 {
-constexpr int kRoundCount = 8;
-constexpr int kMessagesPerRound = 160;
-constexpr auto kMessagePeriod = 5ms;
-constexpr auto kOverallTimeout = 45s;
-constexpr char kTopicPrefix[] = "/test/pub_sub_stress/";
+constexpr std::array<const char*, 4> kTopics{
+    "/examples/multi_topic/temperature",
+    "/examples/multi_topic/pressure",
+    "/examples/multi_topic/heartbeat",
+    "/examples/multi_topic/diagnostics",
+};
+constexpr auto kPublishPeriod = 10ms;
+constexpr auto kStatusPeriod = 1s;
 
-struct PublisherRound
+volatile std::sig_atomic_t stop_requested = 0;
+
+void requestStop(int)
 {
+    stop_requested = 1;
+}
+
+struct TopicPublisher
+{
+    std::string topic;
     std::unique_ptr<Publisher> publisher;
     int next_sequence{0};
-    bool started{false};
+    bool connected{false};
     std::chrono::steady_clock::time_point next_publish{};
 };
 
-std::string topicForRound(const int round)
+void printStatus(const TopicPublisher& state)
 {
-    return std::string{kTopicPrefix} + std::to_string(round);
+    std::cout << "PUB_STATUS topic=" << state.topic
+              << " connected=" << std::boolalpha << state.connected
+              << " sent=" << state.next_sequence << '\n';
 }
 } // namespace
 
 int main()
 {
-    Node publisher_node;
-    std::vector<PublisherRound> rounds;
-    rounds.reserve(kRoundCount);
+    std::signal(SIGINT, requestStop);
+    std::signal(SIGTERM, requestStop);
 
-    for (int round = 0; round < kRoundCount; ++round) {
-        auto publisher = publisher_node.advertise<rf::msgs::ExampleMsg>(topicForRound(round));
+    Node publisher_node;
+    std::vector<TopicPublisher> publishers;
+    publishers.reserve(kTopics.size());
+
+    for (const char* topic : kTopics) {
+        auto publisher = publisher_node.advertise<rf::msgs::ExampleMsg>(topic);
         if (!publisher.valid()) {
-            std::cerr << "failed to advertise round " << round << '\n';
+            std::cerr << "PUB_RESULT status=failed reason=advertise topic=" << topic << '\n';
             return 1;
         }
-        rounds.push_back({std::make_unique<Publisher>(publisher)});
+        publishers.push_back({topic, std::make_unique<Publisher>(publisher)});
     }
 
-    std::cout << "publisher ready: start test_sub within 45 seconds\n";
-    const auto deadline = std::chrono::steady_clock::now() + kOverallTimeout;
+    std::cout << "PUB_READY node=" << publisher_node.getNodeUuid()
+              << " topics=" << publishers.size() << '\n';
+    for (const auto& state : publishers) {
+        std::cout << "PUB_TOPIC topic=" << state.topic << '\n';
+    }
+    std::cout << "Running continuously; press Ctrl+C to stop.\n";
+    auto next_status = std::chrono::steady_clock::now();
 
-    while (std::chrono::steady_clock::now() < deadline) {
+    while (stop_requested == 0) {
         const auto now = std::chrono::steady_clock::now();
-        bool complete = true;
 
-        for (int round = 0; round < kRoundCount; ++round) {
-            auto& state = rounds[round];
-            if (state.next_sequence == kMessagesPerRound) {
+        for (auto& state : publishers) {
+            const bool has_connections = state.publisher->hasConnections();
+            if (has_connections && !state.connected) {
+                state.connected = true;
+                std::cout << "PUB_CONNECTED topic=" << state.topic << '\n';
+            }
+            if (!has_connections && state.connected) {
+                state.connected = false;
+                std::cout << "PUB_DISCONNECTED topic=" << state.topic
+                          << " sent=" << state.next_sequence << '\n';
+            }
+            if (!state.connected) {
                 continue;
             }
-            complete = false;
-
-            if (!state.publisher->hasConnections()) {
-                if (state.started) {
-                    const int sent = state.next_sequence;
-                    state.next_sequence = kMessagesPerRound;
-                    std::cout << "round " << round << " unsubscribed after "
-                              << sent << " messages\n";
-                }
-                continue;
-            }
-
             if (now < state.next_publish) {
                 continue;
             }
 
-            if (!state.started) {
-                state.started = true;
-                std::cout << "round " << round << " registered; starting burst\n";
-            }
-
             auto message = std::make_unique<rf::msgs::ExampleMsg>();
-            message->set_name("round=" + std::to_string(round));
+            message->set_name(state.topic);
             message->set_age(state.next_sequence++);
             if (!state.publisher->publish(std::move(message))) {
-                std::cerr << "failed to publish round " << round << '\n';
+                std::cerr << "PUB_RESULT status=failed reason=publish topic=" << state.topic << '\n';
                 return 1;
             }
-            state.next_publish = now + kMessagePeriod;
+            state.next_publish = now + kPublishPeriod;
         }
 
-        if (complete) {
-            std::cout << "all rounds completed\n";
-            std::this_thread::sleep_for(500ms);
-            return 0;
+        if (now >= next_status) {
+            for (const auto& state : publishers) {
+                printStatus(state);
+            }
+            next_status = now + kStatusPeriod;
         }
         std::this_thread::sleep_for(1ms);
     }
 
-    std::cerr << "timed out waiting for all rounds to register\n";
-    return 1;
+    for (const auto& state : publishers) {
+        printStatus(state);
+    }
+    std::cout << "PUB_RESULT status=stopped\n";
+    return 0;
 }
