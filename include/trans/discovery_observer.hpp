@@ -29,6 +29,7 @@ struct MessageEndpointInfo
     std::string address;
     std::string control_id;
     std::string process_uuid;
+    std::string process_name;
     std::string node_uuid;
     std::string message_type;
     Scope scope{Scope::ALL};
@@ -42,6 +43,7 @@ struct ServiceEndpointInfo
     std::string address;
     std::string socket_id;
     std::string process_uuid;
+    std::string process_name;
     std::string node_uuid;
     std::string request_type;
     std::string response_type;

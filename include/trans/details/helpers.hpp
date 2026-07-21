@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdlib>
+#include <fstream>
 #include <string>
 #include <limits>
 #include <random>
@@ -26,6 +27,17 @@ inline bool getEnv(const std::string& name, std::string& value)
 inline unsigned int getProcessId()
 {
     return ::getpid();
+}
+
+inline std::string getProcessName()
+{
+    std::string name;
+    std::ifstream comm("/proc/self/comm");
+    if (std::getline(comm, name) && !name.empty()) {
+        return name.substr(0, 64);
+    }
+
+    return "pid-" + std::to_string(getProcessId());
 }
 
 inline std::string generateUuidV4() {

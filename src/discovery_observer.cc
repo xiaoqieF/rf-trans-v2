@@ -23,7 +23,7 @@ std::vector<MessageEndpointInfo> snapshotMessageEndpoints(const MsgDiscovery& di
             for (const auto& publisher : process.second) {
                 const auto& options = publisher.getOptions();
                 result.push_back({publisher.getTopic(), publisher.getAddr(), publisher.getCtrl(),
-                    publisher.getProcessUuid(), publisher.getNodeUuid(), publisher.getMsgType(),
+                    publisher.getProcessUuid(), publisher.getProcessName(), publisher.getNodeUuid(), publisher.getMsgType(),
                     options.getScope(), options.throttled(),
                     options.throttled() ? options.getMsgsPerSec() : 0});
             }
@@ -43,7 +43,7 @@ std::vector<ServiceEndpointInfo> snapshotServiceEndpoints(const SrvDiscovery& di
         for (const auto& process : publishers) {
             for (const auto& publisher : process.second) {
                 result.push_back({publisher.getTopic(), publisher.getAddr(), publisher.getSocketId(),
-                    publisher.getProcessUuid(), publisher.getNodeUuid(), publisher.getReqTypeName(),
+                    publisher.getProcessUuid(), publisher.getProcessName(), publisher.getNodeUuid(), publisher.getReqTypeName(),
                     publisher.getRepTypeName(), publisher.getOptions().getScope()});
             }
         }

@@ -17,6 +17,7 @@
 
 #include "msgs/discovery.pb.h"
 #include "trans/details/msgs.hpp"
+#include "trans/details/helpers.hpp"
 #include "trans/details/net_utils.hpp"
 #include "trans/details/trans_types.hpp"
 #include "trans/details/publisher_info.hpp"
@@ -95,6 +96,7 @@ private:
     sockaddr_in multicast_addr_;
 
     std::string process_uuid_;
+    std::string process_name_;
     std::string host_addr_;
     std::vector<int> multicast_sockets_;
     std::array<char, kMaxRcvStr> recv_buf_{};
@@ -151,6 +153,7 @@ Discovery<Pub>::Discovery(const std::string& process_uuid,
     : multicast_group_(ip),
       port_(port),
       process_uuid_(process_uuid),
+      process_name_(getProcessName()),
       host_addr_()
 {
     if (port_ <= 0 || port_ > std::numeric_limits<uint16_t>::max()) {
@@ -768,6 +771,7 @@ void Discovery<Pub>::sendMsg(const msgs::Discovery::Type type, const T& pub) con
     discovery_msg.set_version(kWireVersion);
     discovery_msg.set_type(type);
     discovery_msg.set_process_uuid(process_uuid_);
+    discovery_msg.set_process_name(process_name_);
     pub.fillDiscovery(discovery_msg);
 
     switch (type) {

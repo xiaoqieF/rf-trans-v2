@@ -66,6 +66,7 @@ void PublisherInfo::setFromDiscovery(const msgs::Discovery& msg)
         topic_ = msg.pub().topic();
         addr_ = msg.pub().address();
         process_uuid_ = msg.process_uuid();
+        process_name_ = msg.process_name();
         node_uuid_ = msg.pub().node_uuid();
 
         switch (msg.pub().scope()) {

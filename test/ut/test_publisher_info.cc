@@ -34,12 +34,14 @@ TEST(publisher_info, discovery_fill_set)
 
     discovery_msg.set_type(rf::msgs::Discovery::ADVERTISE);
     discovery_msg.set_process_uuid("sender-pid");
+    discovery_msg.set_process_name("sample-process");
 
     MessagePublisherInfo pub2;
     pub2.setFromDiscovery(discovery_msg);
     EXPECT_EQ(pub2.getTopic(), "topic1");
     EXPECT_EQ(pub2.getAddr(), "tcp://localhost:5555");
     EXPECT_EQ(pub2.getProcessUuid(), "sender-pid");
+    EXPECT_EQ(pub2.getProcessName(), "sample-process");
     EXPECT_EQ(pub2.getNodeUuid(), "node1");
     EXPECT_EQ(pub2.getMsgType(), rf::msgs::ExampleMsg::descriptor()->full_name());
     EXPECT_EQ(pub2.getOptions().getScope(), rf::trans::Scope::ALL);
@@ -88,11 +90,13 @@ TEST(service_publisher_info, discovery_fill_set)
 
     discovery_msg.set_type(rf::msgs::Discovery::ADVERTISE);
     discovery_msg.set_process_uuid("sender-pid");
+    discovery_msg.set_process_name("sample-process");
     ServicePublisherInfo srv2;
     srv2.setFromDiscovery(discovery_msg);
     EXPECT_EQ(srv2.getTopic(), "topic1");
     EXPECT_EQ(srv2.getAddr(), "tcp://localhost:5555");
     EXPECT_EQ(srv2.getProcessUuid(), "sender-pid");
+    EXPECT_EQ(srv2.getProcessName(), "sample-process");
     EXPECT_EQ(srv2.getNodeUuid(), "node1");
     EXPECT_EQ(srv2.getSocketId(), "socket_id_123");
     EXPECT_EQ(srv2.getReqTypeName(), "RequestType");

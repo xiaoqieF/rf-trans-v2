@@ -85,6 +85,11 @@ std::string quoteJson(const std::string& value)
     return "\"" + jsonEscape(value) + "\"";
 }
 
+std::string processDisplayName(const std::string& process_name)
+{
+    return process_name.empty() ? "unknown" : process_name;
+}
+
 std::string messageJson(const MessageEndpointInfo& endpoint, const std::string& event = "")
 {
     std::ostringstream out;
@@ -93,7 +98,7 @@ std::string messageJson(const MessageEndpointInfo& endpoint, const std::string& 
     out << ",\"topic\":" << quoteJson(endpoint.topic)
         << ",\"address\":" << quoteJson(endpoint.address)
         << ",\"control_id\":" << quoteJson(endpoint.control_id)
-        << ",\"process_uuid\":" << quoteJson(endpoint.process_uuid)
+        << ",\"process_name\":" << quoteJson(endpoint.process_name)
         << ",\"node_uuid\":" << quoteJson(endpoint.node_uuid)
         << ",\"message_type\":" << quoteJson(endpoint.message_type)
         << ",\"scope\":" << quoteJson(scopeName(endpoint.scope))
@@ -113,7 +118,7 @@ std::string serviceJson(const ServiceEndpointInfo& endpoint, const std::string& 
     out << ",\"topic\":" << quoteJson(endpoint.topic)
         << ",\"address\":" << quoteJson(endpoint.address)
         << ",\"socket_id\":" << quoteJson(endpoint.socket_id)
-        << ",\"process_uuid\":" << quoteJson(endpoint.process_uuid)
+        << ",\"process_name\":" << quoteJson(endpoint.process_name)
         << ",\"node_uuid\":" << quoteJson(endpoint.node_uuid)
         << ",\"request_type\":" << quoteJson(endpoint.request_type)
         << ",\"response_type\":" << quoteJson(endpoint.response_type)
@@ -155,20 +160,24 @@ void printMessageTable(const std::vector<MessageEndpointInfo>& endpoints, const 
     const auto type_width = longest("TYPE", [](const auto& endpoint) -> const std::string& { return endpoint.message_type; });
     const auto address_width = longest("ADDRESS", [](const auto& endpoint) -> const std::string& { return endpoint.address; });
     const auto scope_width = longest("SCOPE", [](const auto& endpoint) { return scopeName(endpoint.scope); });
+    const auto process_width = longest("PROCESS", [](const auto& endpoint) {
+        return processDisplayName(endpoint.process_name);
+    });
 
     if (!event.empty()) std::cout << std::left << std::setw(7) << "EVENT" << "  ";
     std::cout << std::left << std::setw(static_cast<int>(topic_width)) << "TOPIC" << "  "
               << std::setw(static_cast<int>(type_width)) << "TYPE" << "  "
               << std::setw(static_cast<int>(address_width)) << "ADDRESS" << "  "
               << std::setw(static_cast<int>(scope_width)) << "SCOPE" << "  "
-              << "PROCESS UUID\n";
+              << "PROCESS\n";
     for (const auto& endpoint : endpoints) {
         if (!event.empty()) std::cout << std::left << std::setw(7) << event << "  ";
         std::cout << std::left << std::setw(static_cast<int>(topic_width)) << endpoint.topic << "  "
                   << std::setw(static_cast<int>(type_width)) << endpoint.message_type << "  "
                   << std::setw(static_cast<int>(address_width)) << endpoint.address << "  "
                   << std::setw(static_cast<int>(scope_width)) << scopeName(endpoint.scope) << "  "
-                  << endpoint.process_uuid << '\n';
+                  << std::setw(static_cast<int>(process_width))
+                  << processDisplayName(endpoint.process_name) << '\n';
     }
 }
 
@@ -182,21 +191,28 @@ void printServiceTable(const std::vector<ServiceEndpointInfo>& endpoints, const 
     const auto topic_width = longest("TOPIC", [](const auto& endpoint) -> const std::string& { return endpoint.topic; });
     const auto request_width = longest("REQUEST TYPE", [](const auto& endpoint) -> const std::string& { return endpoint.request_type; });
     const auto response_width = longest("RESPONSE TYPE", [](const auto& endpoint) -> const std::string& { return endpoint.response_type; });
+    const auto address_width = longest("ADDRESS", [](const auto& endpoint) -> const std::string& { return endpoint.address; });
     const auto scope_width = longest("SCOPE", [](const auto& endpoint) { return scopeName(endpoint.scope); });
+    const auto process_width = longest("PROCESS", [](const auto& endpoint) {
+        return processDisplayName(endpoint.process_name);
+    });
 
     if (!event.empty()) std::cout << std::left << std::setw(7) << "EVENT" << "  ";
     std::cout << std::left << std::setw(static_cast<int>(topic_width)) << "TOPIC" << "  "
               << std::setw(static_cast<int>(request_width)) << "REQUEST TYPE" << "  "
               << std::setw(static_cast<int>(response_width)) << "RESPONSE TYPE" << "  "
               << std::setw(static_cast<int>(scope_width)) << "SCOPE" << "  "
-              << "ADDRESS\n";
+              << std::setw(static_cast<int>(address_width)) << "ADDRESS" << "  "
+              << "PROCESS\n";
     for (const auto& endpoint : endpoints) {
         if (!event.empty()) std::cout << std::left << std::setw(7) << event << "  ";
         std::cout << std::left << std::setw(static_cast<int>(topic_width)) << endpoint.topic << "  "
                   << std::setw(static_cast<int>(request_width)) << endpoint.request_type << "  "
                   << std::setw(static_cast<int>(response_width)) << endpoint.response_type << "  "
                   << std::setw(static_cast<int>(scope_width)) << scopeName(endpoint.scope) << "  "
-                  << endpoint.address << '\n';
+                  << std::setw(static_cast<int>(address_width)) << endpoint.address << "  "
+                  << std::setw(static_cast<int>(process_width))
+                  << processDisplayName(endpoint.process_name) << '\n';
     }
 }
 
@@ -207,7 +223,7 @@ void printMessageDetails(const std::vector<MessageEndpointInfo>& endpoints)
                   << "MESSAGE_TYPE: " << endpoint.message_type << '\n'
                   << "ADDRESS: " << endpoint.address << '\n'
                   << "CONTROL_ID: " << endpoint.control_id << '\n'
-                  << "PROCESS_UUID: " << endpoint.process_uuid << '\n'
+                  << "PROCESS_NAME: " << endpoint.process_name << '\n'
                   << "NODE_UUID: " << endpoint.node_uuid << '\n'
                   << "SCOPE: " << scopeName(endpoint.scope) << '\n'
                   << "MESSAGES_PER_SECOND: ";
@@ -225,7 +241,7 @@ void printServiceDetails(const std::vector<ServiceEndpointInfo>& endpoints)
                   << "RESPONSE_TYPE: " << endpoint.response_type << '\n'
                   << "ADDRESS: " << endpoint.address << '\n'
                   << "SOCKET_ID: " << endpoint.socket_id << '\n'
-                  << "PROCESS_UUID: " << endpoint.process_uuid << '\n'
+                  << "PROCESS_NAME: " << endpoint.process_name << '\n'
                   << "NODE_UUID: " << endpoint.node_uuid << '\n'
                   << "SCOPE: " << scopeName(endpoint.scope) << "\n\n";
     }

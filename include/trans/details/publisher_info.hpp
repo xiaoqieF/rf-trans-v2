@@ -30,6 +30,9 @@ public:
     std::string getProcessUuid() const { return process_uuid_;}
     void setProcessUuid(const std::string& p_uuid) { process_uuid_ = p_uuid; }
 
+    std::string getProcessName() const { return process_name_; }
+    void setProcessName(const std::string& name) { process_name_ = name; }
+
     std::string getNodeUuid() const { return node_uuid_; }
     void setNodeUuid(const std::string& n_uuid) { node_uuid_ = n_uuid; }
 
@@ -47,6 +50,7 @@ protected:
     std::string topic_;
     std::string addr_;        // ZeroMQ address of the publisher
     std::string process_uuid_;
+    std::string process_name_;
     std::string node_uuid_;
 
 private:

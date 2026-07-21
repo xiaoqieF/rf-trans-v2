@@ -65,6 +65,7 @@ Header header = 1;
 uint32 version = 2;
 string process_uuid = 3;
 Type type = 4;
+string process_name = 5;
 oneof disc_contents
 {
     Subscriber sub = 6;
