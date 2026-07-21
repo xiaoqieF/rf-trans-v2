@@ -40,7 +40,6 @@ void PublisherInfo::fillDiscovery(msgs::Discovery& msg) const
     msgs::Discovery::Publisher* pub = msg.mutable_pub();
     pub->set_topic(topic_);
     pub->set_address(addr_);
-    pub->set_process_uuid(process_uuid_);
     pub->set_node_uuid(node_uuid_);
 
     switch (opts_.getScope()) {
@@ -66,7 +65,7 @@ void PublisherInfo::setFromDiscovery(const msgs::Discovery& msg)
     } else if (msg.has_pub()) {
         topic_ = msg.pub().topic();
         addr_ = msg.pub().address();
-        process_uuid_ = msg.pub().process_uuid();
+        process_uuid_ = msg.process_uuid();
         node_uuid_ = msg.pub().node_uuid();
 
         switch (msg.pub().scope()) {

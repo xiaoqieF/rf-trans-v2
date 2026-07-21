@@ -51,7 +51,6 @@ message ServicePublisher
 
 string topic = 1;
 string address = 2;
-string process_uuid = 3;
 string node_uuid = 4;
 Scope scope = 5;
 
