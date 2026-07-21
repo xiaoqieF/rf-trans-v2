@@ -82,6 +82,29 @@ build/test/examples/example_response
 build/test/examples/example_discovery
 ```
 
+当 `BUILD_CLI=ON`（默认）时，构建和安装还会产生 `rf-trans`。该工具是只读的发现观测与网络诊断工具，不会注册业务订阅、发布消息或改变远端节点状态：
+
+```bash
+# 先等待一个默认 1.2 秒的发现窗口，再列出当前消息端点
+./build/tools/rf-trans topic list
+
+# 查看一个 topic 的消息类型、地址、scope 和 UUID
+./build/tools/rf-trans topic info /examples/multi_topic/temperature
+
+# 查看服务端点及请求/响应类型
+./build/tools/rf-trans service list --output json
+
+# 持续输出端点出现和消失事件；jsonl 适用于脚本或日志采集
+./build/tools/rf-trans watch topics --output jsonl
+
+# 检查 CLI 选择的网卡、发现组、端口和当前可见端点数
+./build/tools/rf-trans doctor
+```
+
+`topic list`、`service list` 的空结果不视为命令失败；`topic info` 或 `service info` 找不到指定 topic 时返回退出码 `3`。命令参数错误、发现初始化失败分别返回 `2`、`4`。`--host-ip` 可为 CLI 显式指定本地 IPv4 网卡；`--discovery-group`、`--message-port` 和 `--service-port` 可覆盖默认发现网络设置。所有查询命令均支持 `--output table|json|jsonl` 和 `--prefix <topic-prefix>`。
+
+CLI 的 P0 版本只提供端点观测。发送或解码任意业务 Protobuf 消息需要运行时加载 descriptor set，尚未包含在此版本中。
+
 启用单元测试时，CMake 会通过 `FetchContent` 下载 GoogleTest，因此首次配置需要能访问 GitHub：
 
 ```bash

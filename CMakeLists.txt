@@ -9,6 +9,7 @@ include(CMakePackageConfigHelpers)
 
 option(BUILD_TESTING "Enable unit tests" ON)
 option(BUILD_BENCHMARKS "Build benchmark executables" OFF)
+option(BUILD_CLI "Build the rf-trans command-line tool" ON)
 
 if(BUILD_BENCHMARKS AND NOT CMAKE_CONFIGURATION_TYPES)
     # Performance measurements must not use Debug instrumentation or assertions.
@@ -113,9 +114,16 @@ install(EXPORT rf_transTargets
     DESTINATION ${RF_TRANS_CMAKE_INSTALL_DIR}
 )
 
+if(BUILD_TESTING)
+    enable_testing()
+endif()
+
+if(BUILD_CLI)
+    add_subdirectory(tools)
+endif()
+
 add_subdirectory(test)
 
 if(BUILD_TESTING)
-    enable_testing()
     add_subdirectory(test/ut)
 endif()

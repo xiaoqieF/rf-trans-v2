@@ -32,7 +32,8 @@ class Discovery
 public:
     Discovery(const std::string& process_uuid,
               const std::string& ip,
-              const int port);
+              const int port,
+              const std::string& host_address = "");
     virtual ~Discovery();
 
     void start();
@@ -145,7 +146,8 @@ inline bool pollSockets(const std::vector<int>& sockets, const int timeout)
 template<typename Pub>
 Discovery<Pub>::Discovery(const std::string& process_uuid,
                         const std::string& ip,
-                        const int port)
+                        const int port,
+                        const std::string& host_address)
     : multicast_group_(ip),
       port_(port),
       process_uuid_(process_uuid),
@@ -161,7 +163,7 @@ Discovery<Pub>::Discovery(const std::string& process_uuid,
         throw std::invalid_argument("Discovery initialization failed: multicast group must be an IPv4 multicast address.");
     }
 
-    host_addr_ = determineHost();
+    host_addr_ = host_address.empty() ? determineHost() : host_address;
 
     const auto failInitialization = [this](const std::string& reason) {
         for (const auto sock : multicast_sockets_) {
