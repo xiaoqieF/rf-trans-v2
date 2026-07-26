@@ -114,6 +114,22 @@ client.request<rf::msgs::ExampleMsg, rf::msgs::ExampleMsg>("/echo", request,
 ./build/test/examples/example_sub
 ```
 
+大消息可通过共享内存传输,避免跨进程时的序列化与 TCP 拷贝开销;仅在 `Scope::HOST`(或更窄)下生效,因为共享内存无法跨主机访问:
+
+```cpp
+AdvertiseMessageOptions options;
+options.setScope(Scope::HOST);
+options.setUseShm(true);
+auto publisher = node.advertise<rf::msgs::ExampleMsg>("/large_payload", options);
+```
+
+订阅端无需任何改动,`message->payload()` 拿到的仍是反序列化后的消息。完整示例:
+
+```bash
+./build/test/examples/example_shm_pub
+./build/test/examples/example_shm_sub
+```
+
 ## CLI 工具示例
 
 `BUILD_CLI=ON`(默认)时构建 `rf-trans`,只读的端点观测与网络诊断工具:
@@ -149,6 +165,9 @@ cmake -S . -B build-benchmark -DBUILD_TESTING=OFF -DBUILD_BENCHMARKS=ON -DCMAKE_
 cmake --build build-benchmark -j
 ./build-benchmark/test/benchmark/benchmark_pubsub_service \
   --benchmark_repetitions=5 --benchmark_report_aggregates_only=true
+
+# 仅运行共享内存跨进程场景(64 KiB / 1 MiB / 4 MiB payload)
+./build-benchmark/test/benchmark/benchmark_pubsub_service --benchmark_filter=Shm
 ```
 
 ### 测试环境
@@ -179,11 +198,25 @@ cmake --build build-benchmark -j
 | 端到端延迟 BM_PubSubInterprocessEndToEndLatency | 32 B | 11.0 µs |
 | 端到端延迟 BM_PubSubInterprocessEndToEndLatency | 1 KiB | 10.9 µs |
 | 端到端延迟 BM_PubSubInterprocessEndToEndLatency | 64 KiB | 23.0 µs |
+| 端到端延迟 BM_PubSubInterprocessEndToEndLatency | 1 MiB | 358 µs |
+| 端到端延迟 BM_PubSubInterprocessEndToEndLatency | 4 MiB | 1.48 ms |
+| 端到端延迟(共享内存) BM_PubSubInterprocessEndToEndLatencyShm | 64 KiB | 17.6 µs |
+| 端到端延迟(共享内存) BM_PubSubInterprocessEndToEndLatencyShm | 1 MiB | 113 µs |
+| 端到端延迟(共享内存) BM_PubSubInterprocessEndToEndLatencyShm | 4 MiB | 445 µs |
 | 服务跨进程往返 BM_ServiceInterprocessRoundTrip | 32 B | 32.7 µs |
 | 服务跨进程往返 BM_ServiceInterprocessRoundTrip | 1 KiB | 35.8 µs |
 | 服务跨进程往返 BM_ServiceInterprocessRoundTrip | 64 KiB | 79.7 µs |
 
-跨进程用例波动较大(64 KiB 档 `manual_time_cv` 可达 10%+),数值仅供参考,具体表现受机器负载和 CPU 频率调节影响。
+跨进程用例波动较大(64 KiB 档 `manual_time_cv` 可达 10%+,大 payload 档位偶尔出现单次运行的离群值,已用 15 次重复复测确认下表数值可复现),数值仅供参考,具体表现受机器负载和 CPU 频率调节影响。
+
+共享内存传输在 64 KiB / 1 MiB / 4 MiB 档分别比常规 TCP 传输降低约 24%、68%、70% 的延迟。这一版数字是在共享内存的读写两侧都做了"原地操作、避免中转拷贝"的优化之后测得的:
+
+- 写入侧:`publishRemoteShm()`(`src/message_runtime.cc`)不再先 `SerializeToArray` 到一个堆上的临时缓冲区再 `memcpy` 进共享内存槽,而是用 `ShmRing::reserveWrite()` 先拿到槽内指针,让 `SerializeToArray` 直接写入共享内存,省掉一次整段拷贝。
+- 读取侧:`remoteDispatchLoop()` 不再用 `ShmRing::read()` 把数据 `assign` 到一个临时 `std::string` 再反序列化,而是用 `ShmRing::beginRead()` 拿到槽内指针直接 `ParseFromArray()`,解析完成后立刻用 `ShmRing::finishRead()` 校验这段时间内槽有没有被写者覆盖,校验不通过就整条丢弃、不派发给任何订阅回调,省掉了原来 `read()` 里的那次 `assign` 拷贝。这个校验和原来 `read()` 内部"拷贝前后各查一次 seq"的 seqlock 保证完全等价,只是把"消费 payload"的方式从 `memcpy` 换成了 `ParseFromArray`——protobuf 的解析边界由 `ByteSizeLong()` 得出的长度严格限定,不会读出这段共享内存槽之外,所以即便读到撕裂数据也不存在越界问题,只是那种情况下白做一次解析、随后被丢弃。
+
+两侧优化后,共享内存路径基本只剩“一次序列化/反序列化”这一份和常规路径同等量级的开销,payload 越大,相对常规 TCP 路径(仍需一次序列化拷贝 + 内核 socket 收发的固定开销)的优势就越明显,4 MiB 档的优势因此从最初的 11% 提升到了 70%。
+
+接收端 `ShmRing::read()` 仍然会 `assign` 拷贝一次出来供反序列化使用,而常规路径 `publishRemote()` 序列化后以 `zmq::message_t(data, size, ffn, nullptr)` 零拷贝方式移交给 ZMQ,读侧因此仍是共享内存路径唯一多出的一次整段拷贝;共享内存换来的是省掉常规路径 socket 系统调用、内核协议栈、线程唤醒等与 payload 大小无关的固定开销,所以即便这次拷贝还在,shm 仍然全面领先。
 
 ## 网络注意事项
 

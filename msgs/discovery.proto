@@ -40,6 +40,7 @@ message MessagePublisher
     string msg_type = 2;
     bool throttled = 3;
     uint64 msgs_per_sec = 4;
+    bool use_shm = 5;
 }
 
 message ServicePublisher

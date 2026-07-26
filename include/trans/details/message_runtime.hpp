@@ -8,6 +8,7 @@
 #include <set>
 #include <string>
 #include <thread>
+#include <unordered_map>
 #include <vector>
 
 #include "zmq.hpp"
@@ -15,6 +16,7 @@
 #include "trans/details/discovery.hpp"
 #include "trans/details/handler_wrapper.hpp"
 #include "trans/details/publish_msg_details.hpp"
+#include "trans/details/shm_ring.hpp"
 #include "trans/details/trans_types.hpp"
 
 namespace rf
@@ -67,6 +69,10 @@ private:
 
     bool publishRemote(const std::string& topic, char* data, size_t data_size,
         DeallocFunc* ffn, const std::string& msg_type);
+    bool publishRemoteShm(const MessagePublisherInfo& publisher, const ProtoMsg& msg);
+    std::shared_ptr<ShmRing> writerRingFor(const std::string& topic, size_t required_size);
+    std::shared_ptr<ShmRing> readerRingFor(const std::string& shm_name);
+    void removeWriterRing(const std::string& topic);
     void receiveLoop();
     void localDispatchLoop();
     void remoteDispatchLoop();
@@ -118,6 +124,20 @@ private:
     std::deque<std::unique_ptr<RemoteMsg>> remote_message_queue_;
     mutable std::mutex remote_message_mutex_;
     std::condition_variable remote_message_cv_;
+
+    // Shm rings this process writes into, one per advertised topic that uses
+    // shared memory. Created lazily on first publish, torn down (unlinked)
+    // on unadvertise or destruction. Held as shared_ptr (not unique_ptr) so a
+    // concurrent unadvertise() erasing the map entry can't destroy a ring
+    // while another thread is still mid-write() on the pointer it looked up
+    // just before releasing writer_rings_mutex_.
+    std::unordered_map<std::string, std::shared_ptr<ShmRing>> writer_rings_;
+    mutable std::mutex writer_rings_mutex_;
+
+    // Shm rings this process reads from, keyed by shm object name, opened
+    // lazily on first message received for that name.
+    std::unordered_map<std::string, std::shared_ptr<ShmRing>> reader_rings_;
+    mutable std::mutex reader_rings_mutex_;
 };
 
 } // namespace trans

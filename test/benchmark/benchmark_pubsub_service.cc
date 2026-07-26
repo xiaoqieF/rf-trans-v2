@@ -285,12 +285,14 @@ PubSubBenchmark& pubSubFixture(const size_t payload_size)
 class InterprocessPubSubBenchmark
 {
 public:
-    explicit InterprocessPubSubBenchmark(const size_t payload_size)
-        : topic_(makeTopic("pubsub-interprocess")), payload_(payload_size, 'x'),
+    explicit InterprocessPubSubBenchmark(const size_t payload_size, const bool use_shm = false)
+        : topic_(makeTopic(use_shm ? "pubsub-interprocess-shm" : "pubsub-interprocess")),
+          payload_(payload_size, 'x'),
           subscriber_(RF_TRANS_BENCHMARK_SUBSCRIBER_PATH, topic_, std::to_string(payload_size))
     {
         AdvertiseMessageOptions options;
         options.setScope(Scope::HOST);
+        options.setUseShm(use_shm);
         publisher_ = std::make_unique<Publisher>(publisher_node_.advertise<ExampleMsg>(topic_, options));
         if (!publisher_->valid()) {
             throw std::runtime_error("failed to advertise interprocess benchmark publisher");
@@ -388,6 +390,34 @@ InterprocessPubSubBenchmark& interprocessPubSubFixture(const size_t payload_size
     if (!fixture) {
         fixture = std::make_unique<InterprocessPubSubBenchmark>(payload_size);
         std::call_once(cleanup_once, [] { std::atexit(destroyInterprocessPubSubFixtures); });
+    }
+    return *fixture;
+}
+
+// Kept as a separate fixture cache (rather than a bool alongside the
+// existing one) so a shm run never reuses a plain TCP endpoint pair, or
+// vice versa, for the same payload size.
+InterprocessPubSubFixtures& interprocessShmPubSubFixtures()
+{
+    static auto* fixtures = new InterprocessPubSubFixtures;
+    return *fixtures;
+}
+
+void destroyInterprocessShmPubSubFixtures()
+{
+    delete &interprocessShmPubSubFixtures();
+}
+
+InterprocessPubSubBenchmark& interprocessShmPubSubFixture(const size_t payload_size)
+{
+    static std::mutex fixture_mutex;
+    static std::once_flag cleanup_once;
+
+    std::lock_guard lock(fixture_mutex);
+    auto& fixture = interprocessShmPubSubFixtures()[payload_size];
+    if (!fixture) {
+        fixture = std::make_unique<InterprocessPubSubBenchmark>(payload_size, /*use_shm=*/true);
+        std::call_once(cleanup_once, [] { std::atexit(destroyInterprocessShmPubSubFixtures); });
     }
     return *fixture;
 }
@@ -577,6 +607,29 @@ void BM_PubSubInterprocessEndToEndLatency(benchmark::State& state)
     state.counters["payload_bytes"] = static_cast<double>(fixture.payloadSize());
 }
 
+void BM_PubSubInterprocessEndToEndLatencyShm(benchmark::State& state)
+{
+    auto& fixture = interprocessShmPubSubFixture(static_cast<size_t>(state.range(0)));
+
+    for (auto _ : state) {
+        (void)_;
+        auto message = fixture.makeMessage();
+
+        const auto start = std::chrono::steady_clock::now();
+        const bool published = fixture.publish(std::move(message));
+        const bool received = published && fixture.waitForSubscriber();
+        state.SetIterationTime(std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count());
+
+        if (!received) {
+            state.SkipWithError("interprocess shm subscriber did not confirm the published message");
+            return;
+        }
+    }
+
+    state.SetBytesProcessed(state.iterations() * static_cast<int64_t>(fixture.payloadSize()));
+    state.counters["payload_bytes"] = static_cast<double>(fixture.payloadSize());
+}
+
 void BM_ServiceLocalRoundTrip(benchmark::State& state)
 {
     const size_t payload_size = static_cast<size_t>(state.range(0));
@@ -657,7 +710,9 @@ void BM_ServiceInterprocessRoundTrip(benchmark::State& state)
 
 BENCHMARK(BM_PubSubEndToEndLatency)->Arg(32)->Arg(1024)->Arg(65536)->UseManualTime();
 BENCHMARK(BM_PubSubSustainedThroughput)->Arg(32)->Arg(1024)->Arg(65536)->UseManualTime();
-BENCHMARK(BM_PubSubInterprocessEndToEndLatency)->Arg(32)->Arg(1024)->Arg(65536)->UseManualTime();
+BENCHMARK(BM_PubSubInterprocessEndToEndLatency)
+    ->Arg(32)->Arg(1024)->Arg(65536)->Arg(1048576)->Arg(4194304)->UseManualTime();
+BENCHMARK(BM_PubSubInterprocessEndToEndLatencyShm)->Arg(65536)->Arg(1048576)->Arg(4194304)->UseManualTime();
 BENCHMARK(BM_ServiceLocalRoundTrip)->Arg(32)->Arg(1024)->Arg(65536)->UseManualTime();
 BENCHMARK(BM_ServiceInterprocessRoundTrip)->Arg(32)->Arg(1024)->Arg(65536)->UseManualTime();
 } // namespace

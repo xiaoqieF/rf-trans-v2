@@ -23,14 +23,17 @@ TEST(publisher_info, construct)
 
 TEST(publisher_info, discovery_fill_set)
 {
+    rf::trans::AdvertiseMessageOptions options;
+    options.setUseShm(true);
     MessagePublisherInfo pub1("topic1", "tcp://localhost:5555", "unused", "pid1", "node1",
-        rf::msgs::ExampleMsg::descriptor()->full_name(), rf::trans::AdvertiseMessageOptions{});
+        rf::msgs::ExampleMsg::descriptor()->full_name(), options);
     rf::msgs::Discovery discovery_msg;
     pub1.fillDiscovery(discovery_msg);
     EXPECT_EQ(discovery_msg.pub().topic(), "topic1");
     EXPECT_EQ(discovery_msg.pub().address(), "tcp://localhost:5555");
     EXPECT_EQ(discovery_msg.pub().node_uuid(), "node1");
     EXPECT_EQ(discovery_msg.pub().msg_pub().msg_type(), rf::msgs::ExampleMsg::descriptor()->full_name());
+    EXPECT_TRUE(discovery_msg.pub().msg_pub().use_shm());
 
     discovery_msg.set_type(rf::msgs::Discovery::ADVERTISE);
     discovery_msg.set_process_uuid("sender-pid");
@@ -45,6 +48,7 @@ TEST(publisher_info, discovery_fill_set)
     EXPECT_EQ(pub2.getNodeUuid(), "node1");
     EXPECT_EQ(pub2.getMsgType(), rf::msgs::ExampleMsg::descriptor()->full_name());
     EXPECT_EQ(pub2.getOptions().getScope(), rf::trans::Scope::ALL);
+    EXPECT_TRUE(pub2.getOptions().useShm());
 }
 
 TEST(publisher_info, equality)

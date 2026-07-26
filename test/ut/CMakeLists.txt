@@ -37,3 +37,15 @@ target_include_directories(test_node_lifecycle PRIVATE ${GTEST_INCLUDE_DIRS})
 target_link_libraries(test_node_lifecycle PRIVATE rf_trans GTest::gtest GTest::gtest_main pthread)
 
 add_test(NAME test_node_lifecycle COMMAND test_node_lifecycle)
+
+add_executable(test_shm_ring test_shm_ring.cc)
+target_include_directories(test_shm_ring PRIVATE ${GTEST_INCLUDE_DIRS})
+target_link_libraries(test_shm_ring PRIVATE rf_trans GTest::gtest GTest::gtest_main pthread)
+
+add_test(NAME test_shm_ring COMMAND test_shm_ring)
+
+add_executable(test_shm_transport test_shm_transport.cc)
+target_include_directories(test_shm_transport PRIVATE ${GTEST_INCLUDE_DIRS})
+target_link_libraries(test_shm_transport PRIVATE rf_trans GTest::gtest GTest::gtest_main pthread)
+
+add_test(NAME test_shm_transport COMMAND test_shm_transport)

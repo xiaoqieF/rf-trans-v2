@@ -34,6 +34,8 @@ struct RemoteMsg
     std::string sender;
     zmq::message_t data;
     std::string msg_type;
+    // True when `data` is a ShmDescriptor rather than the serialized message.
+    bool is_shm{false};
 };
 
 struct RemoteRequest

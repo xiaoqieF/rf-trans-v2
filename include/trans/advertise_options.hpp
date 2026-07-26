@@ -44,7 +44,8 @@ public:
     virtual ~AdvertiseMessageOptions() = default;
 
     bool operator==(const AdvertiseMessageOptions& rhs) const {
-        return AdvertiseOptions::operator==(rhs) && msgs_per_sec_ == rhs.msgs_per_sec_;
+        return AdvertiseOptions::operator==(rhs) && msgs_per_sec_ == rhs.msgs_per_sec_ &&
+            use_shm_ == rhs.use_shm_;
     }
 
     bool operator!=(const AdvertiseMessageOptions& rhs) const {
@@ -55,10 +56,18 @@ public:
     uint64_t getMsgsPerSec() const { return msgs_per_sec_; }
     void setMsgsPerSec(uint64_t msg_per_sec) { msgs_per_sec_ = msg_per_sec; }
 
+    /// \brief When enabled, large messages published to a topic that only has
+    /// subscribers on the same host are transferred through shared memory
+    /// instead of being serialized over the TCP transport. Subscribers on a
+    /// different host still receive the message over TCP as usual.
+    bool useShm() const { return use_shm_; }
+    void setUseShm(bool use_shm) { use_shm_ = use_shm; }
+
     friend std::ostream& operator<<(std::ostream& out, const AdvertiseMessageOptions& other);
 
 private:
     uint64_t msgs_per_sec_{kUnthrottled};
+    bool use_shm_{false};
 };
 
 class AdvertiseServiceOptions : public AdvertiseOptions
@@ -101,6 +110,7 @@ inline std::ostream& operator<<(std::ostream& out, const AdvertiseMessageOptions
     } else {
         out << "\tThrottled? No" << std::endl;
     }
+    out << "\tShared memory? " << (other.use_shm_ ? "Yes" : "No") << std::endl;
 
     return out;
 }

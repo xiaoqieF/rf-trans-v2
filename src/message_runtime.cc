@@ -1,5 +1,8 @@
 #include "trans/details/message_runtime.hpp"
 
+#include <algorithm>
+#include <cstring>
+
 namespace rf
 {
 namespace trans
@@ -192,6 +195,7 @@ bool MessageRuntime::unsubscribe(const std::string& topic, const std::string& no
 
 bool MessageRuntime::unadvertise(const std::string& topic, const std::string& node_uuid)
 {
+    removeWriterRing(topic);
     return discovery_.unadvertise(topic, node_uuid);
 }
 
@@ -230,6 +234,105 @@ bool MessageRuntime::publishRemote(const std::string& topic, char* data, const s
     return true;
 }
 
+std::shared_ptr<ShmRing> MessageRuntime::writerRingFor(const std::string& topic, const size_t required_size)
+{
+    std::lock_guard lock(writer_rings_mutex_);
+
+    auto it = writer_rings_.find(topic);
+    if (it != writer_rings_.end()) {
+        if (required_size > it->second->slotSize()) {
+            // The topic's ring was sized for smaller messages than this one;
+            // rather than resize a ring readers may already be attached to,
+            // fall back to the regular transport for this message.
+            return nullptr;
+        }
+        return it->second;
+    }
+
+    const size_t slot_size = ((required_size + ShmRing::kShmGranularity - 1) /
+        ShmRing::kShmGranularity) * ShmRing::kShmGranularity;
+    auto ring = std::make_shared<ShmRing>(makeShmName(topic, process_uuid_), slot_size);
+    if (!ring->createAsWriter()) {
+        return nullptr;
+    }
+
+    writer_rings_.emplace(topic, ring);
+    return ring;
+}
+
+std::shared_ptr<ShmRing> MessageRuntime::readerRingFor(const std::string& shm_name)
+{
+    std::lock_guard lock(reader_rings_mutex_);
+
+    auto it = reader_rings_.find(shm_name);
+    if (it != reader_rings_.end()) {
+        return it->second;
+    }
+
+    auto ring = std::make_shared<ShmRing>(shm_name, 0);
+    if (!ring->openAsReader()) {
+        return nullptr;
+    }
+
+    reader_rings_.emplace(shm_name, ring);
+    return ring;
+}
+
+void MessageRuntime::removeWriterRing(const std::string& topic)
+{
+    std::lock_guard lock(writer_rings_mutex_);
+    writer_rings_.erase(topic);
+}
+
+bool MessageRuntime::publishRemoteShm(const MessagePublisherInfo& publisher, const ProtoMsg& msg)
+{
+    const std::string& topic = publisher.getTopic();
+    const std::string& msg_type = publisher.getMsgType();
+    const size_t msg_size = msg.ByteSizeLong();
+
+    auto ring = writerRingFor(topic, msg_size);
+    if (!ring) {
+        return false;
+    }
+
+    // Serialize straight into the shm slot instead of a scratch buffer that
+    // then has to be memcpy'd into the ring, saving one full-payload copy.
+    const ShmRing::ReservedSlot reserved = ring->reserveWrite(msg_size);
+    if (!reserved.payload || !msg.SerializeToArray(reserved.payload, static_cast<int>(msg_size))) {
+        elog::error("MessageRuntime::publishRemoteShm() error serializing data");
+        return false;
+    }
+
+    const ShmRing::SlotHandle handle = ring->commitWrite(reserved, msg_size);
+
+    ShmDescriptor descriptor{};
+    const std::string& shm_name = ring->name();
+    std::memcpy(descriptor.shm_name, shm_name.c_str(),
+        std::min(shm_name.size() + 1, sizeof(descriptor.shm_name) - 1));
+    descriptor.slot_index = handle.slot_index;
+    descriptor.seq = handle.seq;
+    descriptor.size = handle.size;
+
+    const std::string tagged_msg_type = kShmMsgTypeMarker + msg_type;
+
+    zmq::message_t msg0(topic.data(), topic.size()),
+                   msg1(address_.data(), address_.size()),
+                   msg2(&descriptor, sizeof(descriptor)),
+                   msg3(tagged_msg_type.data(), tagged_msg_type.size());
+
+    std::lock_guard lock(publisher_mutex_);
+    try {
+        publisher_->send(msg0, zmq::send_flags::sndmore);
+        publisher_->send(msg1, zmq::send_flags::sndmore);
+        publisher_->send(msg2, zmq::send_flags::sndmore);
+        publisher_->send(msg3, zmq::send_flags::none);
+    } catch (const zmq::error_t& e) {
+        elog::error("MessageRuntime::publishRemoteShm error: {}", e.what());
+        return false;
+    }
+    return true;
+}
+
 bool MessageRuntime::publish(const MessagePublisherInfo& publisher, std::unique_ptr<ProtoMsg> msg)
 {
     const std::string& topic = publisher.getTopic();
@@ -237,20 +340,34 @@ bool MessageRuntime::publish(const MessagePublisherInfo& publisher, std::unique_
     const auto subscriber_info = subscribers(topic, msg_type);
 
     if (subscriber_info.have_remote) {
-        const auto msg_size = msg->ByteSizeLong();
-        char* serialize_buffer = new char[msg_size];
-        if (!msg->SerializeToArray(serialize_buffer, msg_size)) {
-            elog::error("Publisher::publish() error serializing data");
-            delete [] serialize_buffer;
-            return false;
-        }
+        // Shared memory transport requires all remote subscribers to be on
+        // this host, which Scope::HOST already guarantees: a HOST-scoped
+        // topic is never advertised to, or discovered by, a different host
+        // (see Discovery::dispatchDiscoveryMsg's is_sender_local checks).
+        const bool use_shm = publisher.getOptions().useShm() &&
+            publisher.getOptions().getScope() == Scope::HOST;
 
-        auto deallocator = [] (void* buffer, void*) {
-            delete [] reinterpret_cast<char*>(buffer);
-        };
+        // publishRemoteShm() itself falls back to false (rather than
+        // throwing) when the ring can't hold this message, e.g. it grew
+        // past the slot size fixed for this topic on first use.
+        const bool sent_via_shm = use_shm && publishRemoteShm(publisher, *msg);
 
-        if (!publishRemote(topic, serialize_buffer, msg_size, deallocator, msg_type)) {
-            return false;
+        if (!sent_via_shm) {
+            const auto msg_size = msg->ByteSizeLong();
+            char* serialize_buffer = new char[msg_size];
+            if (!msg->SerializeToArray(serialize_buffer, msg_size)) {
+                elog::error("Publisher::publish() error serializing data");
+                delete [] serialize_buffer;
+                return false;
+            }
+
+            auto deallocator = [] (void* buffer, void*) {
+                delete [] reinterpret_cast<char*>(buffer);
+            };
+
+            if (!publishRemote(topic, serialize_buffer, msg_size, deallocator, msg_type)) {
+                return false;
+            }
         }
     }
 
@@ -418,7 +535,13 @@ void MessageRuntime::receiveMessage()
         if (!subscriber_->recv(msg)) {
             return;
         }
-        remote_msg->msg_type = std::string(reinterpret_cast<char*>(msg.data()), msg.size());
+        const char* msg_type_data = reinterpret_cast<char*>(msg.data());
+        if (msg.size() > 0 && msg_type_data[0] == kShmMsgTypeMarker) {
+            remote_msg->is_shm = true;
+            remote_msg->msg_type = std::string(msg_type_data + 1, msg.size() - 1);
+        } else {
+            remote_msg->msg_type = std::string(msg_type_data, msg.size());
+        }
     } catch (const zmq::error_t& e) {
         elog::error("Subscriber socket receive error: {}", e.what());
         return;
@@ -458,6 +581,44 @@ void MessageRuntime::remoteDispatchLoop()
                 continue;
             }
 
+            const void* payload_data = message->data.data();
+            size_t payload_size = message->data.size();
+
+            // For shm messages, `shm_ring`/`shm_handle` stay set so the
+            // parse below can read straight out of shared memory instead of
+            // copying to a scratch string first; ring->finishRead() (called
+            // right after the speculative parse, before any handler sees
+            // the result) then catches the case where the writer overwrote
+            // the slot while it was being parsed.
+            std::shared_ptr<ShmRing> shm_ring;
+            ShmRing::SlotHandle shm_handle{};
+
+            if (message->is_shm) {
+                if (message->data.size() != sizeof(ShmDescriptor)) {
+                    elog::error("Malformed shm descriptor for topic [{}]", message->topic);
+                    continue;
+                }
+                ShmDescriptor descriptor;
+                std::memcpy(&descriptor, message->data.data(), sizeof(descriptor));
+                descriptor.shm_name[sizeof(descriptor.shm_name) - 1] = '\0';
+
+                shm_ring = readerRingFor(descriptor.shm_name);
+                if (!shm_ring) {
+                    elog::error("Failed to open shm ring [{}] for topic [{}]",
+                        descriptor.shm_name, message->topic);
+                    continue;
+                }
+
+                shm_handle = ShmRing::SlotHandle{descriptor.slot_index, descriptor.seq, descriptor.size};
+                const ShmRing::PeekedSlot peeked = shm_ring->beginRead(shm_handle);
+                if (!peeked.payload) {
+                    elog::warn("Dropping shm message for topic [{}], slot was overwritten", message->topic);
+                    continue;
+                }
+                payload_data = peeked.payload;
+                payload_size = peeked.size;
+            }
+
             ProtoMsgPtr proto_msg;
             bool invalid_msg = false;
             for (const auto& [node_uuid, handlers] : handler_info.local_handlers) {
@@ -471,9 +632,15 @@ void MessageRuntime::remoteDispatchLoop()
                         continue;
                     }
                     if (!proto_msg) {
-                        proto_msg = handler->createMsg(message->data.data(), message->data.size(), message->msg_type);
+                        proto_msg = handler->createMsg(payload_data, payload_size, message->msg_type);
                         if (!proto_msg) {
                             elog::error("Failed to deserialize remote message for topic [{}]", message->topic);
+                            invalid_msg = true;
+                            break;
+                        }
+                        if (shm_ring && !shm_ring->finishRead(shm_handle)) {
+                            elog::warn("Dropping shm message for topic [{}], slot was overwritten mid-read",
+                                message->topic);
                             invalid_msg = true;
                             break;
                         }

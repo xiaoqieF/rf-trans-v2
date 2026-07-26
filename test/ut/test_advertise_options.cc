@@ -7,6 +7,10 @@ TEST(advertise_options, construct)
     rf::trans::AdvertiseMessageOptions ops;
     EXPECT_EQ(ops.getMsgsPerSec(), rf::trans::kUnthrottled);
     EXPECT_EQ(ops.getScope(), rf::trans::Scope::ALL);
+    EXPECT_FALSE(ops.useShm());
+
+    ops.setUseShm(true);
+    EXPECT_TRUE(ops.useShm());
 
     rf::trans::AdvertiseServiceOptions ops1;
     EXPECT_EQ(ops1.getScope(), rf::trans::Scope::ALL);
@@ -30,6 +34,13 @@ TEST(advertise_options, equality)
     EXPECT_FALSE(ops1 == ops2);
     EXPECT_TRUE(ops1 != ops2);
     ops2.setMsgsPerSec(10);
+    EXPECT_TRUE(ops1 == ops2);
+    EXPECT_FALSE(ops1 != ops2);
+
+    ops1.setUseShm(true);
+    EXPECT_FALSE(ops1 == ops2);
+    EXPECT_TRUE(ops1 != ops2);
+    ops2.setUseShm(true);
     EXPECT_TRUE(ops1 == ops2);
     EXPECT_FALSE(ops1 != ops2);
 }

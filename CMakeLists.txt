@@ -68,11 +68,17 @@ target_include_directories(rf_trans PUBLIC
     $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
 )
 
+find_library(RF_TRANS_RT_LIB rt)
+
 target_link_libraries(rf_trans PUBLIC
     protobuf::libprotobuf
     PkgConfig::rf_trans_ZMQ
     Threads::Threads
 )
+
+if(RF_TRANS_RT_LIB)
+    target_link_libraries(rf_trans PUBLIC ${RF_TRANS_RT_LIB})
+endif()
 
 install(TARGETS rf_trans
     EXPORT rf_transTargets

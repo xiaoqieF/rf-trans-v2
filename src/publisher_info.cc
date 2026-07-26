@@ -114,6 +114,7 @@ void MessagePublisherInfo::fillDiscovery(msgs::Discovery& msg) const
     pub->mutable_msg_pub()->set_msg_type(msg_type_);
     pub->mutable_msg_pub()->set_throttled(msg_opts_.throttled());
     pub->mutable_msg_pub()->set_msgs_per_sec(msg_opts_.getMsgsPerSec());
+    pub->mutable_msg_pub()->set_use_shm(msg_opts_.useShm());
 }
 void MessagePublisherInfo::setFromDiscovery(const msgs::Discovery& msg)
 {
@@ -126,6 +127,7 @@ void MessagePublisherInfo::setFromDiscovery(const msgs::Discovery& msg)
     } else {
         msg_opts_.setMsgsPerSec(msg.pub().msg_pub().msgs_per_sec());
     }
+    msg_opts_.setUseShm(msg.pub().msg_pub().use_shm());
 }
 
 std::ostream& operator<<(std::ostream& out, const MessagePublisherInfo& msg)
