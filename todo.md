@@ -1,2 +1,0 @@
-- [ ] Python bind
-- [ ] Shared mem inter process
