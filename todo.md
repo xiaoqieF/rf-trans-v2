@@ -1,3 +1,2 @@
 - [ ] Python bind
-- [ ] Command line tools
 - [ ] Shared mem inter process

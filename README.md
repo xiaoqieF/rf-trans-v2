@@ -1,42 +1,18 @@
 # rf_trans
 
-`rf_trans` 是一个基于 C++17、Protocol Buffers 和 ZeroMQ 的轻量级进程间通信库。它将消息和服务以主题（topic）组织，通过 UDP 组播自动发现同一网络中的端点，并在本机或远端透明地分发数据。
+基于 C++17、Protocol Buffers 和 ZeroMQ 的轻量级进程间通信库。消息和服务以 topic 组织,通过 UDP 组播自动发现同一网络中的端点,在本机或远端透明分发数据。
 
-项目提供库目标 `rf_trans`，以及位于 `test/` 下的发布订阅、服务调用和发现示例。它提供 CMake 安装和 `find_package()` 集成，但没有命令行工具或 Python 绑定。
+## 核心能力
 
-## 已实现的能力
+- **发布订阅**:`Node::advertise<MessageT>()` / `Node::subscribe<MessageT>()`,消息类型继承 `google::protobuf::Message`。本地投递走内部队列,远端走 ZeroMQ PUB/SUB。
+- **服务请求响应**:`advertise<RequestT, ReplyT>()` 注册服务,支持异步回调和带超时的同步调用,也支持仅请求/仅响应的服务形式。
+- **自动发现**:UDP 组播发现消息与服务端点(默认端口 `10319` / `10320`),发现后自动建立 ZeroMQ 连接。
+- **可见范围与限速**:发布可选 `PROCESS` / `HOST` / `ALL` 范围,支持 `setMsgsPerSec()` 限速。
+- **CLI 诊断工具** `rf-trans`:只读端点查询、事件监听和原始消息抓包,不注册业务订阅或改变远端状态。
 
-- **发布订阅**：`Node::advertise<MessageT>()` 创建发布者，`Node::subscribe<MessageT>()` 注册订阅回调；消息类型必须继承 `google::protobuf::Message`。
-- **本地和远端传输**：同一进程内的订阅通过内部队列投递；远端消息通过 ZeroMQ `PUB/SUB` 传输。发布 `std::unique_ptr<ProtoMsg>` 时，本地投递可复用消息所有权，减少一次拷贝。
-- **自动发现**：消息和服务分别使用 UDP 组播发现，默认组播地址为 `239.255.0.7`，端口分别为 `10319` 和 `10320`。发现到远端端点后自动建立 ZeroMQ 连接。
-- **服务请求响应**：支持异步回调和带超时的同步调用，也支持“仅请求”和“仅响应”的服务形式。请求会优先调用同一进程内匹配的服务端。
-- **发布选项**：可指定可见范围 `PROCESS`、`HOST` 或 `ALL`（默认）；消息发布还可通过 `setMsgsPerSec()` 限速。
-- **端点查询和清理**：可查询已发现的 topic / service，等待服务上线，并取消订阅或撤销已发布服务。`Node` 析构时会清理其订阅和服务声明。
+## 依赖
 
-## 架构概览
-
-```text
-Node / Publisher
-    |                         UDP multicast
-    +-- advertise / subscribe <---- Discovery ----> remote processes
-    |                                   |
-    +-- local callback queue           +-- establish ZeroMQ connections
-                                        |
-                             PUB/SUB messages, ROUTER-based services
-```
-
-每个进程共享一个内部 `NodeShared` 实例，因此在一个进程中创建多个 `Node` 时，它们复用网络套接字、发现器和后台处理线程；每个 `Node` 仍有独立的 node UUID、订阅和服务声明。
-
-## 依赖与平台
-
-- Linux（代码使用 POSIX socket API 和 `pthread_setname_np`）
-- CMake >= 3.22
-- 支持 C++17 的编译器
-- Protocol Buffers：开发库和 `protoc`
-- ZeroMQ 开发库（`libzmq`）以及 C++ 头文件 `zmq.hpp`（通常由 `cppzmq` 开发包提供）
-- `pkg-config`
-
-在 Debian / Ubuntu 上，通常可安装如下依赖：
+Linux、CMake >= 3.22、支持 C++17 的编译器、Protobuf(库 + `protoc`)、ZeroMQ(`libzmq` + `cppzmq`)、`pkg-config`。
 
 ```bash
 sudo apt install build-essential cmake pkg-config protobuf-compiler libprotobuf-dev libzmq3-dev cppzmq-dev
@@ -44,68 +20,12 @@ sudo apt install build-essential cmake pkg-config protobuf-compiler libprotobuf-
 
 ## 构建
 
-库会在构建目录中从 `msgs/*.proto` 生成 C++ 源码和头文件。下列命令关闭单元测试，适合只构建库和示例：
-
 ```bash
 cmake -S . -B build -DBUILD_TESTING=OFF
 cmake --build build -j
 ```
 
-### 安装并供其他 CMake 项目使用
-
-默认可安装到系统前缀，也可指定一个用户可写前缀：
-
-```bash
-cmake -S . -B build -DBUILD_TESTING=OFF -DCMAKE_INSTALL_PREFIX=$HOME/.local
-cmake --build build -j
-cmake --install build
-```
-
-安装内容包括 `rf_trans` 库、公共头文件、内置 `elog` 头文件、构建期生成的 Protobuf 消息头文件和原始 `.proto` 定义。下游项目通过安装前缀查找并链接命名空间 target：
-
-```cmake
-find_package(rf_trans CONFIG REQUIRED)
-
-target_link_libraries(my_application PRIVATE rf_trans::rf_trans)
-```
-
-若安装前缀不在 CMake 的默认搜索路径中，在配置消费者项目时传入 `-DCMAKE_PREFIX_PATH=$HOME/.local`。包配置会自动查找 Protobuf、`pkg-config`、ZeroMQ 和线程库；消费者仍需安装这些系统依赖以及提供 `zmq.hpp` 的 cppzmq 开发包。
-
-生成的目标包括：
-
-```text
-build/librf_trans.a
-build/test/examples/example_pub
-build/test/examples/example_sub
-build/test/examples/example_request
-build/test/examples/example_response
-build/test/examples/example_discovery
-```
-
-当 `BUILD_CLI=ON`（默认）时，构建和安装还会产生 `rf-trans`。该工具是只读的发现观测与网络诊断工具，不会注册业务订阅、发布消息或改变远端节点状态：
-
-```bash
-# 先等待一个默认 1.2 秒的发现窗口，再列出当前消息端点
-./build/tools/rf-trans topic list
-
-# 查看一个 topic 的消息类型、地址、scope 和 UUID
-./build/tools/rf-trans topic info /examples/multi_topic/temperature
-
-# 查看服务端点及请求/响应类型
-./build/tools/rf-trans service list --output json
-
-# 持续输出端点出现和消失事件；jsonl 适用于脚本或日志采集
-./build/tools/rf-trans watch topics --output jsonl
-
-# 检查 CLI 选择的网卡、发现组、端口和当前可见端点数
-./build/tools/rf-trans doctor
-```
-
-`topic list`、`service list` 的空结果不视为命令失败；`topic info` 或 `service info` 找不到指定 topic 时返回退出码 `3`。命令参数错误、发现初始化失败分别返回 `2`、`4`。`--host-ip` 可为 CLI 显式指定本地 IPv4 网卡；`--discovery-group`、`--message-port` 和 `--service-port` 可覆盖默认发现网络设置。所有查询命令均支持 `--output table|json|jsonl` 和 `--prefix <topic-prefix>`。
-
-CLI 的 P0 版本只提供端点观测。发送或解码任意业务 Protobuf 消息需要运行时加载 descriptor set，尚未包含在此版本中。
-
-启用单元测试时，CMake 会通过 `FetchContent` 下载 GoogleTest，因此首次配置需要能访问 GitHub：
+启用单元测试(通过 `FetchContent` 下载 GoogleTest,需要网络):
 
 ```bash
 cmake -S . -B build -DBUILD_TESTING=ON
@@ -113,9 +33,22 @@ cmake --build build -j
 ctest --test-dir build --output-on-failure
 ```
 
-## 快速开始
+安装到指定前缀并供其他 CMake 项目使用:
 
-示例消息定义在 `msgs/example.proto`：
+```bash
+cmake -S . -B build -DBUILD_TESTING=OFF -DCMAKE_INSTALL_PREFIX=$HOME/.local
+cmake --build build -j
+cmake --install build
+```
+
+```cmake
+find_package(rf_trans CONFIG REQUIRED)
+target_link_libraries(my_application PRIVATE rf_trans::rf_trans)
+```
+
+## 使用示例
+
+消息定义(`msgs/example.proto`):
 
 ```proto
 message ExampleMsg {
@@ -124,9 +57,7 @@ message ExampleMsg {
 }
 ```
 
-### 发布和订阅
-
-创建发布者和订阅者时，模板参数必须是相同的 Protobuf 消息类型。下面的进程内示例也可拆分为两个独立进程；在组播可达的网络中，它们会自动互相发现。
+### 发布订阅
 
 ```cpp
 #include "msgs/example.pb.h"
@@ -152,17 +83,9 @@ int main()
 }
 ```
 
-`Publisher::publish()` 会检查运行时消息类型是否与 `advertise()` 时的类型一致。可使用 `Publisher::hasConnections()` 判断是否有本地或远端订阅者；对于高频消息，可配置限速：
-
-```cpp
-rf::trans::AdvertiseMessageOptions options;
-options.setMsgsPerSec(30);
-auto publisher = node.advertise<rf::msgs::ExampleMsg>("/status", options);
-```
+`Publisher::hasConnections()` 可判断是否有订阅者;高频消息可用 `AdvertiseMessageOptions::setMsgsPerSec()` 限速。
 
 ### 服务调用
-
-服务端用 `advertise<RequestT, ReplyT>()` 注册回调；回调返回值表示业务处理是否成功。客户端可异步传入回调，或使用带超时的重载进行同步等待。
 
 ```cpp
 // Server
@@ -180,88 +103,104 @@ auto request = std::make_shared<rf::msgs::ExampleMsg>();
 request->set_name("hello");
 client.request<rf::msgs::ExampleMsg, rf::msgs::ExampleMsg>("/echo", request,
     [](const std::shared_ptr<const rf::msgs::ExampleMsg>& reply, bool success) {
-        if (success) {
-            elog::info("reply: {}", reply->ShortDebugString());
-        }
+        if (success) elog::info("reply: {}", reply->ShortDebugString());
     });
 ```
 
-以下简化形式也可用：
-
-- `advertise<RequestT>(topic, callback)`：服务只接收请求，不返回业务响应。
-- `advertise<ReplyT>(topic, callback)`：服务不接收业务请求，只返回响应。
-- 与上述两种服务对应的 `request()` 重载会自动使用 `rf::msgs::Empty`。
-- `waitForService(topic, timeout)` 可在请求前等待本地或远端服务被发现。
-
-完整的可执行示例见 `test/examples/`。构建后可在不同终端运行，例如：
+`waitForService(topic, timeout)` 可在请求前等待服务被发现。完整可运行示例见 `test/examples/`:
 
 ```bash
 ./build/test/examples/example_pub
 ./build/test/examples/example_sub
 ```
 
-### 多 topic 发布订阅观测示例
+## CLI 工具示例
 
-`example_pub` 和 `example_sub` 共同演示四个独立 topic 的发现、连接、发布、接收和取消订阅：
+`BUILD_CLI=ON`(默认)时构建 `rf-trans`,只读的端点观测与网络诊断工具:
 
-```text
-/examples/multi_topic/temperature
-/examples/multi_topic/pressure
-/examples/multi_topic/heartbeat
-/examples/multi_topic/diagnostics
+```bash
+# 等待发现窗口后列出当前消息端点
+./build/tools/rf-trans topic list
+
+# 查看一个 topic 的类型、地址、scope 和 UUID
+./build/tools/rf-trans topic info /examples/multi_topic/temperature
+
+# 监听 topic 实时速率与原始 protobuf 字段(类似 protoc --decode_raw)
+./build/tools/rf-trans topic sniff /examples/multi_topic/temperature
+
+# 查看服务端点
+./build/tools/rf-trans service list --output json
+
+# 持续输出端点上线/下线事件,适合日志采集
+./build/tools/rf-trans watch topics --output jsonl
+
+# 检查 CLI 选择的网卡、发现组、端口和当前可见端点数
+./build/tools/rf-trans doctor
 ```
 
-先运行 `example_pub`，再运行 `example_sub`。两个程序会持续运行，直到收到 `Ctrl+C`（或 `SIGTERM`）。订阅端同时订阅全部四个 topic；发布端仅在对应 topic 有订阅连接时发送，因此可以长期作为 CLI 的发现和端点信息观测对象。
-
-两个程序都输出可检索的键值行，方便人工观察或与未来 CLI 的端点信息对照：`PUB_TOPIC` / `SUB_TOPIC` 列出声明或订阅的 topic，`PUB_CONNECTED` / `PUB_DISCONNECTED` 展示每个 topic 的连接生命周期，`PUB_STATUS` 与 `SUB_STATUS` 分别展示连接状态、已发送数和已接收数。订阅端完成初始检查后输出 `SUB_CHECK status=passed`；收到退出信号后，两个程序分别以 `PUB_RESULT status=stopped` 和 `SUB_RESULT status=stopped` 结束。
-
-订阅端会验证每个 topic 都及时收到足量消息、消息序列严格递增，以及负载中的 topic 名称没有串线。检查失败只会报告 `SUB_CHECK status=failed`，程序仍会持续运行，便于排查后续状态。
+所有查询命令支持 `--output table|json|jsonl` 和 `--prefix <topic-prefix>`;`--host-ip`、`--discovery-group`、`--message-port`、`--service-port` 可覆盖发现网络设置。`topic info` / `service info` 找不到指定 topic 返回退出码 `3`,参数错误返回 `2`,发现初始化失败返回 `4`。
 
 ## 性能基准
 
-性能基准位于 `test/benchmark/`，使用 Google Benchmark。默认不构建，避免常规构建增加依赖；开启后会优先使用系统安装的 Google Benchmark，不存在时由 CMake 下载 v1.8.3。
+位于 `test/benchmark/`,基于 Google Benchmark:
 
 ```bash
 cmake -S . -B build-benchmark -DBUILD_TESTING=OFF -DBUILD_BENCHMARKS=ON -DCMAKE_BUILD_TYPE=Release
 cmake --build build-benchmark -j
 ./build-benchmark/test/benchmark/benchmark_pubsub_service \
-  --benchmark_repetitions=10 --benchmark_report_aggregates_only=true
+  --benchmark_repetitions=5 --benchmark_report_aggregates_only=true
 ```
 
-每种负载分别测试 32 B、1 KiB 和 64 KiB 的 `ExampleMsg` payload：
+### 测试环境
 
-- `BM_PubSubEndToEndLatency`：单个在途消息从 `publish()` 到订阅回调完成的延迟。
-- `BM_PubSubSustainedThroughput`：128 条一批的发布订阅吞吐，计时至该批回调全部完成。
-- `BM_ServiceLocalRoundTrip`：请求、服务处理器和响应回调的本地往返延迟。
-- `BM_PubSubInterprocessEndToEndLatency`：基准程序自动启动同机订阅端子进程后，从 `publish()` 到远端订阅回调确认的端到端延迟。
-- `BM_ServiceInterprocessRoundTrip`：基准程序自动启动同机服务端子进程后，客户端到远端服务端再返回客户端的往返延迟。
+- CPU: AMD Ryzen 5 9600X(12 线程),启用 CPU 频率调节(结果存在噪声)
+- OS: Linux 6.17,x86_64
+- 构建类型: Release(跨进程用例额外经过一次预热通信)
 
-前三项使用进程内端点，以隔离库本身的数据路径。两个跨进程基准会在计时前完成子进程启动、UDP 组播发现、ZeroMQ 连接和一次预热通信；计时区间仅包含一次消息或服务请求及已校验的远端确认。它们需要同机进程可使用 UDP 组播发现，必要时为运行基准的进程设置可达的 `RF_HOST_IP`。消息对象构造、端点创建、连接就绪检查和销毁不计入计时。
+### 实测结果(manual_time,5 次重复取中位数)
 
-启用 `BUILD_BENCHMARKS` 时，单配置生成器会强制使用 `Release`；对 Visual Studio、Xcode 等多配置生成器，请使用 `cmake --build build-benchmark --config Release`。
+进程内(隔离数据路径,不含网络往返):
 
-## 网络与部署注意事项
+| 场景 | Payload | 延迟/耗时 | 吞吐 |
+|---|---|---|---|
+| 端到端延迟 BM_PubSubEndToEndLatency | 32 B | 3.2 µs | — |
+| 端到端延迟 BM_PubSubEndToEndLatency | 1 KiB | 3.4 µs | 287 MiB/s |
+| 端到端延迟 BM_PubSubEndToEndLatency | 64 KiB | 3.6 µs | 16.9 GiB/s |
+| 持续吞吐 BM_PubSubSustainedThroughput(128 条/批) | 32 B | 68 µs/批 | 1.88 M msg/s |
+| 持续吞吐 BM_PubSubSustainedThroughput(128 条/批) | 1 KiB | 87 µs/批 | 1.47 M msg/s |
+| 持续吞吐 BM_PubSubSustainedThroughput(128 条/批) | 64 KiB | 232 µs/批 | 550 k msg/s |
+| 服务本地往返 BM_ServiceLocalRoundTrip | 32 B | 165 ns | 6.06 M req/s |
+| 服务本地往返 BM_ServiceLocalRoundTrip | 64 KiB | 1.2 µs | 828 k req/s |
 
-- 自动发现依赖 IPv4 UDP 组播。跨主机运行时，主机、防火墙、容器网络和交换机必须允许组播流量及动态分配的 TCP 端口。
-- Discovery 和 TCP endpoint 使用同一张网卡。默认选择枚举到的第一个可用 IPv4 组播地址；多网卡、VPN 或容器环境应设置 `RF_HOST_IP` 指定可达的本机 IPv4 地址，例如：`RF_HOST_IP=192.168.1.10 ./build/test/examples/example_pub`。
-- 若组播不可用，远端自动发现和通信无法建立；同一进程内的发布订阅和服务调用不依赖远端发现。
-- `Scope::PROCESS` 不向其他进程广播，`Scope::HOST` 仅允许来自所选网卡或 loopback 的本机发现，`Scope::ALL` 允许网络内发现；同机进程应使用一致的 `RF_HOST_IP` 配置。
-- topic 字符串和 Protobuf 全限定类型名共同参与匹配；同名 topic 上类型不一致的消息或服务不会作为匹配端点使用。
+跨进程(经 UDP 组播发现 + ZeroMQ TCP 连接):
+
+| 场景 | Payload | 延迟 |
+|---|---|---|
+| 端到端延迟 BM_PubSubInterprocessEndToEndLatency | 32 B | 11.0 µs |
+| 端到端延迟 BM_PubSubInterprocessEndToEndLatency | 1 KiB | 10.9 µs |
+| 端到端延迟 BM_PubSubInterprocessEndToEndLatency | 64 KiB | 23.0 µs |
+| 服务跨进程往返 BM_ServiceInterprocessRoundTrip | 32 B | 32.7 µs |
+| 服务跨进程往返 BM_ServiceInterprocessRoundTrip | 1 KiB | 35.8 µs |
+| 服务跨进程往返 BM_ServiceInterprocessRoundTrip | 64 KiB | 79.7 µs |
+
+跨进程用例波动较大(64 KiB 档 `manual_time_cv` 可达 10%+),数值仅供参考,具体表现受机器负载和 CPU 频率调节影响。
+
+## 网络注意事项
+
+- 依赖 IPv4 UDP 组播,跨主机部署需确保网络允许组播流量及动态 TCP 端口。
+- 多网卡、VPN 或容器环境需设置 `RF_HOST_IP` 指定可达的本机地址,例如 `RF_HOST_IP=192.168.1.10 ./build/test/examples/example_pub`。
+- `Scope::PROCESS` 不跨进程广播,`Scope::HOST` 仅同机发现,`Scope::ALL` 允许网络内发现。
+- topic 字符串和 Protobuf 全限定类型名共同参与匹配,同名 topic 类型不一致时不会匹配。
 
 ## 目录说明
 
 ```text
-include/trans/  对外 C++ 接口（node、publisher 和 advertise options）
-include/trans/details/  内部运行时、发现机制和模板实现
-src/            Node、Publisher 和共享运行时实现
-msgs/           Discovery 协议与示例 Protobuf 消息
-test/examples/  可执行通信示例
-test/benchmark/ 发布订阅与服务基准
-test/ut/        GoogleTest 单元测试
-deps/elog/      随源码附带的日志库
-todo.md         后续计划
+include/trans/         对外 C++ 接口
+include/trans/details/ 内部运行时、发现机制和模板实现
+src/                    Node、Publisher、TopicSniffer 等实现
+msgs/                   Discovery 协议与示例 Protobuf 消息
+tools/                  CLI 工具 rf-trans
+test/examples/          可执行通信示例
+test/benchmark/         发布订阅与服务基准
+test/ut/                GoogleTest 单元测试
 ```
-
-## 当前边界
-
-项目仍处于开发阶段。`todo.md` 中列出了 Python 绑定、命令行工具、性能基准和清理待办等计划。通过源码方式集成时可使用 `add_subdirectory()` 并链接 `rf_trans::rf_trans`；已安装的包则使用 `find_package(rf_trans CONFIG REQUIRED)`。

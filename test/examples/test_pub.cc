@@ -81,6 +81,7 @@ int main()
             const bool has_connections = state.publisher->hasConnections();
             if (has_connections && !state.connected) {
                 state.connected = true;
+                state.next_publish = now;
                 std::cout << "PUB_CONNECTED topic=" << state.topic << '\n';
             }
             if (!has_connections && state.connected) {
@@ -102,7 +103,7 @@ int main()
                 std::cerr << "PUB_RESULT status=failed reason=publish topic=" << state.topic << '\n';
                 return 1;
             }
-            state.next_publish = now + kPublishPeriod;
+            state.next_publish += kPublishPeriod;
         }
 
         if (now >= next_status) {

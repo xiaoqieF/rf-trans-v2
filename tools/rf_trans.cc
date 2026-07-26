@@ -3,6 +3,7 @@
 #include <csignal>
 #include <cstdint>
 #include <cstdlib>
+#include <deque>
 #include <iomanip>
 #include <iostream>
 #include <map>
@@ -13,15 +14,23 @@
 #include <utility>
 #include <vector>
 
+#include <google/protobuf/unknown_field_set.h>
+
 #include "trans/discovery_observer.hpp"
+#include "trans/topic_sniffer.hpp"
 
 namespace
 {
+using google::protobuf::UnknownField;
+using google::protobuf::UnknownFieldSet;
 using rf::trans::DiscoveryObserver;
 using rf::trans::DiscoveryObserverOptions;
 using rf::trans::MessageEndpointInfo;
 using rf::trans::Scope;
 using rf::trans::ServiceEndpointInfo;
+using rf::trans::SniffedMessage;
+using rf::trans::TopicSniffer;
+using rf::trans::TopicSnifferOptions;
 
 constexpr int kExitUsage = 2;
 constexpr int kExitNotFound = 3;
@@ -285,6 +294,174 @@ void printServices(const std::vector<ServiceEndpointInfo>& endpoints, const Outp
     for (const auto& endpoint : endpoints) std::cout << serviceJson(endpoint, event) << '\n';
 }
 
+std::string printablePreview(const std::string& value, const std::size_t max_len = 64)
+{
+    std::ostringstream out;
+    out << '"';
+    for (std::size_t i = 0; i < value.size() && i < max_len; ++i) {
+        const unsigned char c = static_cast<unsigned char>(value[i]);
+        if (c == '"' || c == '\\') out << '\\' << static_cast<char>(c);
+        else if (c >= 0x20 && c < 0x7f) out << static_cast<char>(c);
+        else out << '.';
+    }
+    out << '"';
+    if (value.size() > max_len) out << "...(" << value.size() << "B)";
+    return out.str();
+}
+
+// Decodes raw protobuf bytes without a schema, similar to `protoc --decode_raw`:
+// field numbers and wire values are recovered, but field names are unknown.
+std::string decodeUnknownField(const UnknownField& field)
+{
+    std::ostringstream out;
+    out << field.number() << ":";
+    switch (field.type()) {
+    case UnknownField::TYPE_VARINT:
+        out << field.varint();
+        break;
+    case UnknownField::TYPE_FIXED32:
+        out << field.fixed32();
+        break;
+    case UnknownField::TYPE_FIXED64:
+        out << field.fixed64();
+        break;
+    case UnknownField::TYPE_LENGTH_DELIMITED: {
+        UnknownFieldSet nested;
+        const std::string& bytes = field.length_delimited();
+        if (!bytes.empty() && nested.ParseFromString(bytes)) {
+            out << "{";
+            for (int i = 0; i < nested.field_count(); ++i) {
+                if (i != 0) out << " ";
+                out << decodeUnknownField(nested.field(i));
+            }
+            out << "}";
+        } else {
+            out << printablePreview(bytes);
+        }
+        break;
+    }
+    case UnknownField::TYPE_GROUP: {
+        const auto& group = field.group();
+        out << "{";
+        for (int i = 0; i < group.field_count(); ++i) {
+            if (i != 0) out << " ";
+            out << decodeUnknownField(group.field(i));
+        }
+        out << "}";
+        break;
+    }
+    }
+    return out.str();
+}
+
+std::string decodeRawProtobuf(const std::string& raw_data)
+{
+    UnknownFieldSet fields;
+    if (raw_data.empty() || !fields.ParseFromArray(raw_data.data(), static_cast<int>(raw_data.size()))) {
+        return "<undecodable>";
+    }
+    std::ostringstream out;
+    for (int i = 0; i < fields.field_count(); ++i) {
+        if (i != 0) out << " ";
+        out << decodeUnknownField(fields.field(i));
+    }
+    return out.str();
+}
+
+std::string unknownFieldWireType(const UnknownField& field)
+{
+    switch (field.type()) {
+    case UnknownField::TYPE_VARINT: return "varint";
+    case UnknownField::TYPE_FIXED32: return "fixed32";
+    case UnknownField::TYPE_FIXED64: return "fixed64";
+    case UnknownField::TYPE_LENGTH_DELIMITED: return "length_delimited";
+    case UnknownField::TYPE_GROUP: return "group";
+    }
+    return "unknown";
+}
+
+std::string unknownFieldJsonValue(const UnknownField& field)
+{
+    std::ostringstream out;
+    switch (field.type()) {
+    case UnknownField::TYPE_VARINT:
+        out << field.varint();
+        break;
+    case UnknownField::TYPE_FIXED32:
+        out << field.fixed32();
+        break;
+    case UnknownField::TYPE_FIXED64:
+        out << field.fixed64();
+        break;
+    case UnknownField::TYPE_LENGTH_DELIMITED:
+        out << quoteJson(printablePreview(field.length_delimited()));
+        break;
+    case UnknownField::TYPE_GROUP:
+        out << quoteJson(decodeUnknownField(field));
+        break;
+    }
+    return out.str();
+}
+
+std::string fieldsJson(const std::string& raw_data)
+{
+    UnknownFieldSet fields;
+    if (raw_data.empty() || !fields.ParseFromArray(raw_data.data(), static_cast<int>(raw_data.size()))) {
+        return "[]";
+    }
+    std::ostringstream out;
+    out << "[";
+    for (int i = 0; i < fields.field_count(); ++i) {
+        if (i != 0) out << ",";
+        const auto& field = fields.field(i);
+        out << "{\"number\":" << field.number()
+            << ",\"wire_type\":" << quoteJson(unknownFieldWireType(field))
+            << ",\"value\":" << unknownFieldJsonValue(field) << "}";
+    }
+    out << "]";
+    return out.str();
+}
+
+// Tracks the observed message rate over a trailing window, independent of
+// any rate the publisher may self-report via AdvertiseMessageOptions.
+class RateTracker
+{
+public:
+    explicit RateTracker(const std::chrono::milliseconds window) : window_(window) {}
+
+    double recordAndGetRate(const rf::trans::Timestamp& now)
+    {
+        timestamps_.push_back(now);
+        while (!timestamps_.empty() && now - timestamps_.front() > window_) {
+            timestamps_.pop_front();
+        }
+        const double window_seconds = std::chrono::duration<double>(window_).count();
+        return static_cast<double>(timestamps_.size()) / window_seconds;
+    }
+
+private:
+    std::chrono::milliseconds window_;
+    std::deque<rf::trans::Timestamp> timestamps_;
+};
+
+void printSniffedMessage(const SniffedMessage& message, const double rate, const OutputFormat output)
+{
+    if (output == OutputFormat::Table) {
+        std::cout << "size=" << message.raw_data.size() << "B  rate=" << std::fixed
+                   << std::setprecision(1) << rate << "Hz  sender=" << message.sender
+                   << "  msg_type=" << message.msg_type << "  " << decodeRawProtobuf(message.raw_data)
+                   << '\n';
+        return;
+    }
+    std::cout << "{\"kind\":\"sniff\""
+               << ",\"topic\":" << quoteJson(message.topic)
+               << ",\"sender\":" << quoteJson(message.sender)
+               << ",\"msg_type\":" << quoteJson(message.msg_type)
+               << ",\"size\":" << message.raw_data.size()
+               << ",\"rate\":" << std::fixed << std::setprecision(3) << rate
+               << ",\"fields\":" << fieldsJson(message.raw_data) << "}\n";
+}
+
 unsigned int parseUnsigned(const std::string& name, const std::string& value, const unsigned long max_value)
 {
     std::size_t consumed = 0;
@@ -349,6 +526,7 @@ void printUsage(std::ostream& output)
         << "Commands:\n"
         << "  topic list                 List discovered message endpoints\n"
         << "  topic info <topic>         Show endpoints for one message topic\n"
+        << "  topic sniff <topic>        Monitor a topic's live rate and raw content\n"
         << "  service list               List discovered service endpoints\n"
         << "  service info <topic>       Show endpoints for one service topic\n"
         << "  watch topics|services      Stream endpoint add/remove events\n"
@@ -444,6 +622,30 @@ int run(const Options& options)
                       << ",\"message_endpoints\":" << messages.size()
                       << ",\"service_endpoints\":" << services.size() << "}\n";
         }
+        return 0;
+    }
+
+    if (command == "topic" && options.positional.size() == 3 && options.positional[1] == "sniff") {
+        const std::string& topic = options.positional[2];
+        TopicSnifferOptions sniffer_options;
+        sniffer_options.multicast_group = options.discovery.multicast_group;
+        sniffer_options.message_port = options.discovery.message_port;
+        sniffer_options.host_address = options.discovery.host_address;
+
+        TopicSniffer sniffer(topic, sniffer_options);
+        RateTracker rate_tracker(std::chrono::milliseconds(2000));
+        sniffer.setMessageCallback([&](const SniffedMessage& message) {
+            const double rate = rate_tracker.recordAndGetRate(message.received_at);
+            printSniffedMessage(message, rate, options.output);
+        });
+
+        std::signal(SIGINT, requestStop);
+        std::signal(SIGTERM, requestStop);
+        sniffer.start();
+        while (g_stop_requested == 0) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        }
+        sniffer.stop();
         return 0;
     }
 
