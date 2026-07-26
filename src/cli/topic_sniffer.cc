@@ -1,4 +1,4 @@
-#include "trans/topic_sniffer.hpp"
+#include "trans/cli/topic_sniffer.hpp"
 
 #include <atomic>
 #include <mutex>

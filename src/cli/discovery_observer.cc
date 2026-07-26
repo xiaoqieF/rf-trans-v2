@@ -1,4 +1,4 @@
-#include "trans/discovery_observer.hpp"
+#include "trans/cli/discovery_observer.hpp"
 
 #include <utility>
 

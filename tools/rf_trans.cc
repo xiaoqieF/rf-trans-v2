@@ -16,8 +16,8 @@
 
 #include <google/protobuf/unknown_field_set.h>
 
-#include "trans/discovery_observer.hpp"
-#include "trans/topic_sniffer.hpp"
+#include "trans/cli/discovery_observer.hpp"
+#include "trans/cli/topic_sniffer.hpp"
 
 namespace
 {
