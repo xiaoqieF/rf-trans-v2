@@ -278,7 +278,7 @@ stateDiagram-v2
 - 发现报文使用单个 UDP datagram，长度字段为 `uint16`，实现上限约 64 KiB；过大的发现元数据会被拒绝。业务大 payload 不应塞进 UDP，而应使用 ZeroMQ/共享内存。
 - 当前 `UNADVERTISE` 逻辑删除发现记录，但 ZeroMQ 物理 disconnect 主要依赖 socket 生命周期/底层行为；逻辑上不会再向该端点派发新数据。
 
-## 9. 面试重点与可追问答案
+## 9. Q&A
 
 **为什么不用 UDP 直接传业务消息？**
 
