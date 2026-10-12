@@ -225,6 +225,8 @@ cmake --build build-benchmark -j
 
 ## 目录说明
 
+架构分层、线程模型和 UDP 发现机制的详细文档见 [`docs/architecture.md`](docs/architecture.md)。
+
 ```text
 include/trans/         对外 C++ 接口
 include/trans/details/ 内部运行时、发现机制和模板实现
